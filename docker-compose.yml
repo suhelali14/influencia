@@ -1,0 +1,162 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: influencia_postgres
+    environment:
+      POSTGRES_DB: influencia
+      POSTGRES_USER: influencia_user
+      POSTGRES_PASSWORD: dev_password_123
+      POSTGRES_HOST_AUTH_METHOD: trust
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./backend/migrations:/docker-entrypoint-initdb.d
+    networks:
+      - influencia_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U influencia_user -d influencia"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis for caching and queues
+  redis:
+    image: redis:7-alpine
+    container_name: influencia_redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - influencia_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # RabbitMQ for message queue
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: influencia_rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: influencia
+      RABBITMQ_DEFAULT_PASS: dev_password_123
+    ports:
+      - "5672:5672"   # AMQP
+      - "15672:15672" # Management UI
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    networks:
+      - influencia_network
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Backend API (NestJS)
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.dev
+    container_name: influencia_backend
+    environment:
+      NODE_ENV: development
+      DATABASE_URL: postgresql://influencia_user:dev_password_123@postgres:5432/influencia
+      REDIS_URL: redis://redis:6379
+      RABBITMQ_URL: amqp://influencia:dev_password_123@rabbitmq:5672
+      JWT_SECRET: dev_jwt_secret_change_in_production
+      JWT_EXPIRES_IN: 7d
+      PORT: 3000
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./backend:/app
+      - /app/node_modules
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - influencia_network
+    command: npm run start:dev
+
+  # Frontend (React + Vite)
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev
+    container_name: influencia_frontend
+    environment:
+      VITE_API_URL: http://localhost:3000/v1
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    depends_on:
+      - backend
+    networks:
+      - influencia_network
+    command: npm run dev -- --host
+
+  # MinIO (S3-compatible object storage)
+  minio:
+    image: minio/minio:latest
+    container_name: influencia_minio
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin123
+    ports:
+      - "9000:9000"   # API
+      - "9001:9001"   # Console
+    volumes:
+      - minio_data:/data
+    networks:
+      - influencia_network
+    command: server /data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Adminer (Database management UI)
+  adminer:
+    image: adminer:latest
+    container_name: influencia_adminer
+    ports:
+      - "8080:8080"
+    networks:
+      - influencia_network
+    depends_on:
+      - postgres
+
+  # RedisInsight (Redis management UI)
+  redis-insight:
+    image: redislabs/redisinsight:latest
+    container_name: influencia_redis_insight
+    ports:
+      - "8001:8001"
+    networks:
+      - influencia_network
+    depends_on:
+      - redis
+
+networks:
+  influencia_network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  redis_data:
+  rabbitmq_data:
+  minio_data:

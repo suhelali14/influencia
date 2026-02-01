@@ -1,0 +1,129 @@
+version: '3.8'
+
+# Production Docker Compose for Influencia Platform
+# Usage: docker-compose -f docker-compose.prod.yml up -d
+
+services:
+  # Frontend - React Application
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_URL: ${VITE_API_URL:-http://localhost:3000/v1}
+        VITE_AI_API_URL: ${VITE_AI_API_URL:-http://localhost:5001}
+    container_name: influencia_frontend
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    networks:
+      - influencia_network
+    depends_on:
+      - backend
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Backend - NestJS API
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: influencia_backend
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      
+      # Database - Use your production database URL
+      DATABASE_URL: ${DATABASE_URL}
+      
+      # Redis - Use your production Redis URL
+      REDIS_HOST: ${REDIS_HOST:-redis}
+      REDIS_PORT: ${REDIS_PORT:-6379}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      REDIS_TLS: ${REDIS_TLS:-false}
+      
+      # JWT
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-7d}
+      
+      # Session
+      SESSION_TTL: ${SESSION_TTL:-604800}
+      MAX_SESSIONS_PER_USER: ${MAX_SESSIONS_PER_USER:-5}
+      
+      # AI Service
+      AI_SERVICE_URL: http://ai:5001
+      
+      # CORS
+      CORS_ORIGIN: ${CORS_ORIGIN:-*}
+      
+    ports:
+      - "3000:3000"
+    networks:
+      - influencia_network
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/health', (r) => process.exit(r.statusCode === 200 ? 0 : 1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # AI Service - Python ML API
+  ai:
+    build:
+      context: ./ai
+      dockerfile: Dockerfile
+    container_name: influencia_ai
+    restart: unless-stopped
+    environment:
+      PORT: 5001
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      USE_LLM: ${USE_LLM:-true}
+      REDIS_URL: redis://redis:6379
+    ports:
+      - "5001:5001"
+    volumes:
+      - ai_models:/app/models
+      - ai_embeddings:/app/embeddings_cache
+    networks:
+      - influencia_network
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Redis - Session & Cache Store
+  redis:
+    image: redis:7-alpine
+    container_name: influencia_redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - influencia_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+networks:
+  influencia_network:
+    driver: bridge
+
+volumes:
+  redis_data:
+  ai_models:
+  ai_embeddings:

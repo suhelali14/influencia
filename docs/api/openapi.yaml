@@ -1,0 +1,1530 @@
+openapi: 3.0.3
+info:
+  title: SafarCollab API
+  description: |
+    SafarCollab is a two-sided SaaS influencer marketplace platform that connects brands with creators.
+    
+    ## Features
+    - Multi-tenant SaaS architecture
+    - Social media OAuth integration (Instagram, YouTube, TikTok)
+    - AI-powered creator-campaign matching
+    - Escrow payment processing
+    - Campaign lifecycle management
+    - Compliance automation (ASCI, GST)
+    
+    ## Authentication
+    All endpoints (except public auth endpoints) require a Bearer token in the Authorization header:
+    ```
+    Authorization: Bearer <your_jwt_token>
+    ```
+    
+    ## Rate Limiting
+    - Standard tier: 100 requests/minute
+    - Pro tier: 500 requests/minute
+    - Enterprise: Custom limits
+    
+  version: 1.0.0
+  contact:
+    name: SafarCollab API Support
+    email: api@safarcollab.com
+  license:
+    name: Proprietary
+
+servers:
+  - url: https://api.safarcollab.com/v1
+    description: Production server
+  - url: https://api-staging.safarcollab.com/v1
+    description: Staging server
+  - url: http://localhost:3000/v1
+    description: Local development
+
+tags:
+  - name: Authentication
+    description: User authentication and authorization
+  - name: Social Connect
+    description: Social media account integration
+  - name: Creators
+    description: Creator profile and management
+  - name: Brands
+    description: Brand profile and management
+  - name: Campaigns
+    description: Campaign creation and management
+  - name: Matching
+    description: AI-powered creator-campaign matching
+  - name: Offers
+    description: Campaign offer management
+  - name: Payments
+    description: Escrow payments and payouts
+  - name: Analytics
+    description: Performance metrics and reporting
+  - name: Admin
+    description: Platform administration
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    # ===== Authentication Schemas =====
+    SignupRequest:
+      type: object
+      required: [email, password, role]
+      properties:
+        email:
+          type: string
+          format: email
+          example: creator@example.com
+        password:
+          type: string
+          format: password
+          minLength: 8
+          example: SecureP@ss123
+        role:
+          type: string
+          enum: [creator, brand_admin]
+          example: creator
+        phone:
+          type: string
+          example: '+919876543210'
+
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          format: password
+
+    AuthResponse:
+      type: object
+      properties:
+        access_token:
+          type: string
+          example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+        refresh_token:
+          type: string
+        token_type:
+          type: string
+          example: Bearer
+        expires_in:
+          type: integer
+          example: 604800
+        user:
+          $ref: '#/components/schemas/User'
+
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        role:
+          type: string
+          enum: [creator, brand_admin, brand_member, platform_admin]
+        status:
+          type: string
+          enum: [active, suspended, pending_verification]
+        email_verified:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+
+    # ===== Creator Schemas =====
+    Creator:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        user_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          example: Asha Sharma
+        display_name:
+          type: string
+          example: '@asha_beauty'
+        bio:
+          type: string
+        profile_image_url:
+          type: string
+          format: uri
+        primary_platform:
+          type: string
+          enum: [instagram, youtube, tiktok]
+        categories:
+          type: array
+          items:
+            type: string
+          example: [beauty, skincare, lifestyle]
+        languages:
+          type: array
+          items:
+            type: string
+          example: [hindi, english]
+        base_rate_inr:
+          type: number
+          format: decimal
+          example: 20000
+        location_city:
+          type: string
+          example: Mumbai
+        location_country:
+          type: string
+          example: IN
+        kyc_status:
+          type: string
+          enum: [pending, submitted, verified, rejected]
+        availability_status:
+          type: string
+          example: available
+        created_at:
+          type: string
+          format: date-time
+
+    CreateCreatorRequest:
+      type: object
+      required: [name, primary_platform, categories]
+      properties:
+        name:
+          type: string
+        display_name:
+          type: string
+        bio:
+          type: string
+        primary_platform:
+          type: string
+          enum: [instagram, youtube, tiktok]
+        categories:
+          type: array
+          items:
+            type: string
+        languages:
+          type: array
+          items:
+            type: string
+        base_rate_inr:
+          type: number
+        location_city:
+          type: string
+        location_country:
+          type: string
+
+    # ===== Social Account Schemas =====
+    SocialAccount:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        creator_id:
+          type: string
+          format: uuid
+        platform:
+          type: string
+          enum: [instagram, youtube, tiktok, twitter, linkedin]
+        platform_user_id:
+          type: string
+        username:
+          type: string
+          example: '@asha_beauty'
+        display_name:
+          type: string
+        profile_url:
+          type: string
+          format: uri
+        follower_count:
+          type: integer
+          format: int64
+          example: 150000
+        following_count:
+          type: integer
+        verified:
+          type: boolean
+        business_account:
+          type: boolean
+        connection_status:
+          type: string
+          enum: [active, expired, revoked, error]
+        last_sync_at:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+
+    OAuthUrlResponse:
+      type: object
+      properties:
+        oauth_url:
+          type: string
+          format: uri
+          example: https://api.instagram.com/oauth/authorize?client_id=...
+        state:
+          type: string
+          description: CSRF protection token
+          example: abc123xyz
+
+    ExchangeTokenRequest:
+      type: object
+      required: [code, state]
+      properties:
+        code:
+          type: string
+          description: OAuth authorization code
+        state:
+          type: string
+          description: CSRF token from oauth_url response
+
+    # ===== Post Schemas =====
+    Post:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        social_account_id:
+          type: string
+          format: uuid
+        platform:
+          type: string
+        platform_post_id:
+          type: string
+        post_type:
+          type: string
+          enum: [image, video, carousel, story, reel, short]
+        published_at:
+          type: string
+          format: date-time
+        caption:
+          type: string
+        hashtags:
+          type: array
+          items:
+            type: string
+        media_urls:
+          type: array
+          items:
+            type: string
+            format: uri
+        metrics:
+          $ref: '#/components/schemas/PostMetrics'
+        engagement_rate:
+          type: number
+          format: decimal
+        is_sponsored:
+          type: boolean
+        campaign_id:
+          type: string
+          format: uuid
+
+    PostMetrics:
+      type: object
+      properties:
+        views:
+          type: integer
+          format: int64
+        impressions:
+          type: integer
+          format: int64
+        reach:
+          type: integer
+          format: int64
+        likes:
+          type: integer
+          format: int64
+        comments:
+          type: integer
+          format: int64
+        shares:
+          type: integer
+          format: int64
+        saves:
+          type: integer
+          format: int64
+        clicks:
+          type: integer
+          format: int64
+
+    # ===== Campaign Schemas =====
+    Campaign:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        brand_id:
+          type: string
+          format: uuid
+        title:
+          type: string
+          example: Summer Skincare Launch
+        description:
+          type: string
+        objective:
+          type: string
+          enum: [awareness, engagement, conversions, traffic]
+        budget_min_inr:
+          type: number
+          format: decimal
+        budget_max_inr:
+          type: number
+          format: decimal
+        start_date:
+          type: string
+          format: date
+        end_date:
+          type: string
+          format: date
+        status:
+          type: string
+          enum: [draft, active, paused, completed, cancelled]
+        target_demographics:
+          $ref: '#/components/schemas/TargetDemographics'
+        target_platforms:
+          type: array
+          items:
+            type: string
+        target_categories:
+          type: array
+          items:
+            type: string
+        min_follower_count:
+          type: integer
+          format: int64
+        content_requirements:
+          type: object
+        disclosure_required:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+
+    CreateCampaignRequest:
+      type: object
+      required: [title, objective, budget_min_inr, budget_max_inr]
+      properties:
+        title:
+          type: string
+        description:
+          type: string
+        objective:
+          type: string
+        budget_min_inr:
+          type: number
+        budget_max_inr:
+          type: number
+        start_date:
+          type: string
+          format: date
+        end_date:
+          type: string
+          format: date
+        target_demographics:
+          $ref: '#/components/schemas/TargetDemographics'
+        target_platforms:
+          type: array
+          items:
+            type: string
+        target_categories:
+          type: array
+          items:
+            type: string
+        min_follower_count:
+          type: integer
+        content_requirements:
+          type: object
+
+    TargetDemographics:
+      type: object
+      properties:
+        age_min:
+          type: integer
+          example: 18
+        age_max:
+          type: integer
+          example: 35
+        gender:
+          type: array
+          items:
+            type: string
+            enum: [male, female, other, all]
+        locations:
+          type: array
+          items:
+            type: string
+          example: [Mumbai, Delhi, Bangalore]
+        interests:
+          type: array
+          items:
+            type: string
+
+    # ===== Match & Scoring Schemas =====
+    MatchScore:
+      type: object
+      properties:
+        campaign_id:
+          type: string
+          format: uuid
+        creator_id:
+          type: string
+          format: uuid
+        creator:
+          $ref: '#/components/schemas/Creator'
+        total_score:
+          type: number
+          format: decimal
+          example: 87.5
+        audience_fit_score:
+          type: number
+        engagement_score:
+          type: number
+        content_fit_score:
+          type: number
+        authenticity_score:
+          type: number
+        recommendation:
+          type: string
+          enum: [accept, consider, decline]
+          example: accept
+        reasons:
+          type: array
+          items:
+            type: string
+          example:
+            - High audience overlap (78%)
+            - Strong engagement rate (5.2%)
+            - Content aligns with beauty category
+        estimated_reach:
+          type: integer
+          format: int64
+          example: 120000
+        estimated_engagement:
+          type: integer
+          example: 6240
+        estimated_conversions:
+          type: integer
+          example: 180
+        generated_at:
+          type: string
+          format: date-time
+
+    # ===== Offer Schemas =====
+    CampaignOffer:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        campaign_id:
+          type: string
+          format: uuid
+        creator_id:
+          type: string
+          format: uuid
+        campaign:
+          $ref: '#/components/schemas/Campaign'
+        creator:
+          $ref: '#/components/schemas/Creator'
+        state:
+          type: string
+          enum: [pending, accepted, declined, negotiating, completed, cancelled]
+        proposed_fee_inr:
+          type: number
+          format: decimal
+        final_fee_inr:
+          type: number
+          format: decimal
+        platform_cut_pct:
+          type: number
+          format: decimal
+        platform_fee_inr:
+          type: number
+          format: decimal
+        creator_payout_inr:
+          type: number
+          format: decimal
+        deliverables:
+          type: array
+          items:
+            $ref: '#/components/schemas/Deliverable'
+        match_score:
+          type: number
+        recommendation:
+          type: string
+        offer_sent_at:
+          type: string
+          format: date-time
+        accepted_at:
+          type: string
+          format: date-time
+        deadline:
+          type: string
+          format: date
+
+    CreateOfferRequest:
+      type: object
+      required: [creator_id, proposed_fee_inr]
+      properties:
+        creator_id:
+          type: string
+          format: uuid
+        proposed_fee_inr:
+          type: number
+        deliverables:
+          type: array
+          items:
+            $ref: '#/components/schemas/Deliverable'
+        notes:
+          type: string
+        deadline:
+          type: string
+          format: date
+
+    Deliverable:
+      type: object
+      properties:
+        type:
+          type: string
+          enum: [instagram_post, instagram_story, instagram_reel, youtube_video, youtube_short, tiktok_video]
+        quantity:
+          type: integer
+          example: 2
+        requirements:
+          type: string
+        due_date:
+          type: string
+          format: date
+
+    AcceptOfferRequest:
+      type: object
+      properties:
+        negotiated_fee_inr:
+          type: number
+        creator_notes:
+          type: string
+
+    # ===== Payment Schemas =====
+    Payment:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        offer_id:
+          type: string
+          format: uuid
+        payment_type:
+          type: string
+          enum: [escrow_deposit, creator_payout, platform_fee, refund]
+        amount_inr:
+          type: number
+          format: decimal
+        status:
+          type: string
+          enum: [pending, processing, completed, failed, refunded]
+        provider:
+          type: string
+          example: razorpay
+        provider_transaction_id:
+          type: string
+        escrow_status:
+          type: string
+        initiated_at:
+          type: string
+          format: date-time
+        completed_at:
+          type: string
+          format: date-time
+
+    CreateEscrowRequest:
+      type: object
+      required: [offer_id, amount_inr]
+      properties:
+        offer_id:
+          type: string
+          format: uuid
+        amount_inr:
+          type: number
+        payment_method:
+          type: string
+          enum: [card, upi, netbanking]
+
+    ReleaseEscrowRequest:
+      type: object
+      required: [offer_id]
+      properties:
+        offer_id:
+          type: string
+          format: uuid
+        notes:
+          type: string
+
+    # ===== Sync Job Schemas =====
+    SyncJob:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        social_account_id:
+          type: string
+          format: uuid
+        job_type:
+          type: string
+          enum: [full_sync, incremental_sync, metrics_update]
+        status:
+          type: string
+          enum: [queued, running, completed, failed, cancelled]
+        posts_fetched:
+          type: integer
+        posts_created:
+          type: integer
+        posts_updated:
+          type: integer
+        errors_count:
+          type: integer
+        started_at:
+          type: string
+          format: date-time
+        completed_at:
+          type: string
+          format: date-time
+
+    # ===== Analytics Schemas =====
+    CreatorAnalytics:
+      type: object
+      properties:
+        creator_id:
+          type: string
+          format: uuid
+        total_posts:
+          type: integer
+        total_views:
+          type: integer
+          format: int64
+        total_likes:
+          type: integer
+          format: int64
+        avg_engagement_rate:
+          type: number
+          format: decimal
+        follower_growth:
+          type: array
+          items:
+            $ref: '#/components/schemas/TimeSeriesDataPoint'
+        top_performing_posts:
+          type: array
+          items:
+            $ref: '#/components/schemas/Post'
+
+    CampaignAnalytics:
+      type: object
+      properties:
+        campaign_id:
+          type: string
+          format: uuid
+        total_offers:
+          type: integer
+        accepted_offers:
+          type: integer
+        completed_offers:
+          type: integer
+        total_spent:
+          type: number
+        total_reach:
+          type: integer
+          format: int64
+        total_engagement:
+          type: integer
+          format: int64
+        roi:
+          type: number
+
+    TimeSeriesDataPoint:
+      type: object
+      properties:
+        date:
+          type: string
+          format: date
+        value:
+          type: number
+
+    # ===== Common Schemas =====
+    Error:
+      type: object
+      properties:
+        code:
+          type: string
+          example: VALIDATION_ERROR
+        message:
+          type: string
+          example: Invalid request parameters
+        details:
+          type: array
+          items:
+            type: object
+            properties:
+              field:
+                type: string
+              message:
+                type: string
+
+    PaginatedResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items: {}
+        pagination:
+          type: object
+          properties:
+            page:
+              type: integer
+              example: 1
+            limit:
+              type: integer
+              example: 20
+            total:
+              type: integer
+              example: 150
+            total_pages:
+              type: integer
+              example: 8
+
+paths:
+  # ===== Authentication Endpoints =====
+  /auth/signup:
+    post:
+      tags: [Authentication]
+      summary: User registration
+      description: Create a new user account (creator or brand)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SignupRequest'
+      responses:
+        '201':
+          description: User created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /auth/login:
+    post:
+      tags: [Authentication]
+      summary: User login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '401':
+          description: Invalid credentials
+
+  /auth/refresh:
+    post:
+      tags: [Authentication]
+      summary: Refresh access token
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                refresh_token:
+                  type: string
+      responses:
+        '200':
+          description: Token refreshed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+
+  # ===== Social Connect Endpoints =====
+  /social/{platform}/oauth-url:
+    get:
+      tags: [Social Connect]
+      summary: Get OAuth URL for social platform
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: platform
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [instagram, youtube, tiktok]
+        - name: redirect_uri
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uri
+      responses:
+        '200':
+          description: OAuth URL generated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OAuthUrlResponse'
+
+  /social/{platform}/exchange-token:
+    post:
+      tags: [Social Connect]
+      summary: Exchange OAuth code for access token
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: platform
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [instagram, youtube, tiktok]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExchangeTokenRequest'
+      responses:
+        '200':
+          description: Account connected successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SocialAccount'
+
+  /social/accounts:
+    get:
+      tags: [Social Connect]
+      summary: List connected social accounts
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: List of connected accounts
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/SocialAccount'
+
+  /social/accounts/{accountId}/sync:
+    post:
+      tags: [Social Connect]
+      summary: Trigger manual sync for social account
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: accountId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '202':
+          description: Sync job queued
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SyncJob'
+
+  /social/sync/{jobId}:
+    get:
+      tags: [Social Connect]
+      summary: Get sync job status
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: jobId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Job status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SyncJob'
+
+  # ===== Creator Endpoints =====
+  /creators:
+    post:
+      tags: [Creators]
+      summary: Create creator profile
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCreatorRequest'
+      responses:
+        '201':
+          description: Creator profile created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Creator'
+
+    get:
+      tags: [Creators]
+      summary: List creators (for brand discovery)
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+        - name: categories
+          in: query
+          schema:
+            type: array
+            items:
+              type: string
+        - name: min_followers
+          in: query
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Paginated list of creators
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedResponse'
+
+  /creators/me:
+    get:
+      tags: [Creators]
+      summary: Get current creator profile
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Creator profile
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Creator'
+
+    patch:
+      tags: [Creators]
+      summary: Update creator profile
+      security:
+        - BearerAuth: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCreatorRequest'
+      responses:
+        '200':
+          description: Profile updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Creator'
+
+  /creators/{creatorId}/posts:
+    get:
+      tags: [Creators]
+      summary: Get creator posts
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: creatorId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: platform
+          in: query
+          schema:
+            type: string
+        - name: start_date
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: end_date
+          in: query
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: List of posts
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Post'
+
+  # ===== Campaign Endpoints =====
+  /campaigns:
+    post:
+      tags: [Campaigns]
+      summary: Create new campaign
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCampaignRequest'
+      responses:
+        '201':
+          description: Campaign created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Campaign'
+
+    get:
+      tags: [Campaigns]
+      summary: List campaigns
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+        - name: page
+          in: query
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Paginated campaigns
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedResponse'
+
+  /campaigns/{campaignId}:
+    get:
+      tags: [Campaigns]
+      summary: Get campaign details
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: campaignId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Campaign details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Campaign'
+
+    patch:
+      tags: [Campaigns]
+      summary: Update campaign
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: campaignId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCampaignRequest'
+      responses:
+        '200':
+          description: Campaign updated
+
+  # ===== Matching Endpoints =====
+  /campaigns/{campaignId}/matches:
+    get:
+      tags: [Matching]
+      summary: Get AI-matched creators for campaign
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: campaignId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: min_score
+          in: query
+          schema:
+            type: number
+            default: 50
+        - name: recommendation
+          in: query
+          schema:
+            type: string
+            enum: [accept, consider]
+      responses:
+        '200':
+          description: Matched creators with scores
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/MatchScore'
+
+  /creators/me/recommended-campaigns:
+    get:
+      tags: [Matching]
+      summary: Get recommended campaigns for creator
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Recommended campaigns
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    campaign:
+                      $ref: '#/components/schemas/Campaign'
+                    match_score:
+                      $ref: '#/components/schemas/MatchScore'
+
+  # ===== Offer Endpoints =====
+  /campaigns/{campaignId}/offers:
+    post:
+      tags: [Offers]
+      summary: Send offer to creator
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: campaignId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateOfferRequest'
+      responses:
+        '201':
+          description: Offer sent
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CampaignOffer'
+
+    get:
+      tags: [Offers]
+      summary: List campaign offers
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: campaignId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: List of offers
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/CampaignOffer'
+
+  /offers/me:
+    get:
+      tags: [Offers]
+      summary: Get offers for current creator
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: state
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: List of offers
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/CampaignOffer'
+
+  /offers/{offerId}/accept:
+    post:
+      tags: [Offers]
+      summary: Accept campaign offer
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: offerId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AcceptOfferRequest'
+      responses:
+        '200':
+          description: Offer accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CampaignOffer'
+
+  /offers/{offerId}/decline:
+    post:
+      tags: [Offers]
+      summary: Decline campaign offer
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: offerId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason:
+                  type: string
+      responses:
+        '200':
+          description: Offer declined
+
+  # ===== Payment Endpoints =====
+  /payments/escrow:
+    post:
+      tags: [Payments]
+      summary: Create escrow deposit
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateEscrowRequest'
+      responses:
+        '201':
+          description: Escrow created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Payment'
+
+  /payments/escrow/release:
+    post:
+      tags: [Payments]
+      summary: Release escrow payment to creator
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReleaseEscrowRequest'
+      responses:
+        '200':
+          description: Payment released
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Payment'
+
+  /payments:
+    get:
+      tags: [Payments]
+      summary: List payments
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+        - name: type
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Payment list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Payment'
+
+  # ===== Analytics Endpoints =====
+  /analytics/creators/{creatorId}:
+    get:
+      tags: [Analytics]
+      summary: Get creator analytics
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: creatorId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: start_date
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: end_date
+          in: query
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: Creator analytics
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreatorAnalytics'
+
+  /analytics/campaigns/{campaignId}:
+    get:
+      tags: [Analytics]
+      summary: Get campaign analytics
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: campaignId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Campaign analytics
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CampaignAnalytics'
+
+  # ===== Webhooks (for receiving platform events) =====
+  /webhooks/social/{platform}:
+    post:
+      tags: [Social Connect]
+      summary: Receive social platform webhooks
+      description: Endpoint for Instagram/YouTube/TikTok to push real-time updates
+      parameters:
+        - name: platform
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Webhook processed
+
+  /webhooks/payments:
+    post:
+      tags: [Payments]
+      summary: Receive payment provider webhooks
+      description: Razorpay/Stripe webhook endpoint
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Webhook processed
+
+security:
+  - BearerAuth: []
