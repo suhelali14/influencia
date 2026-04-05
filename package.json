@@ -44,5 +44,8 @@
     "creator-economy"
   ],
   "author": "SafarCollab Team",
-  "license": "UNLICENSED"
+  "license": "UNLICENSED",
+  "dependencies": {
+    "puppeteer": "^24.40.0"
+  }
 }
