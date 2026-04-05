@@ -530,14 +530,59 @@ export default function CreatorAnalysis() {
             <div className="card">
               <h3 className="text-lg font-semibold text-gray-900 mb-4">Industry Benchmarks</h3>
               <div className="space-y-4">
-                <div>
+                {/* Creator Tier Badge */}
+                {comparisons.creatorTier && (
+                  <div className="flex items-center justify-between">
+                    <span className="text-gray-600 text-sm">Creator Tier</span>
+                    <span className={`px-3 py-1 rounded-full text-xs font-bold ${
+                      comparisons.creatorTier === 'Mega' ? 'bg-purple-100 text-purple-800' :
+                      comparisons.creatorTier === 'Macro' ? 'bg-blue-100 text-blue-800' :
+                      comparisons.creatorTier === 'Mid' ? 'bg-green-100 text-green-800' :
+                      comparisons.creatorTier === 'Micro' ? 'bg-yellow-100 text-yellow-800' :
+                      'bg-gray-100 text-gray-800'
+                    }`}>
+                      {comparisons.creatorTier} {comparisons.totalFollowers ? `(${comparisons.totalFollowers >= 1000000 ? `${(comparisons.totalFollowers / 1000000).toFixed(1)}M` : comparisons.totalFollowers >= 1000 ? `${(comparisons.totalFollowers / 1000).toFixed(1)}K` : comparisons.totalFollowers})` : ''}
+                    </span>
+                  </div>
+                )}
+
+                {/* Engagement Rate vs Benchmark */}
+                {comparisons.benchmarkEngagementRate != null && (
+                  <div>
+                    <div className="flex justify-between text-sm mb-1">
+                      <span className="text-gray-600">Engagement Rate</span>
+                      <span className="font-semibold text-gray-900">
+                        {comparisons.engagementRate != null
+                          ? `${Number(comparisons.engagementRate).toFixed(2)}%`
+                          : 'No data'}
+                        <span className="text-gray-400 font-normal"> / {comparisons.benchmarkEngagementRate}% avg</span>
+                      </span>
+                    </div>
+                    {comparisons.engagementRate != null && (
+                      <div className="w-full bg-gray-200 rounded-full h-2">
+                        <div
+                          className={`h-2 rounded-full ${
+                            Number(comparisons.engagementRate) >= comparisons.benchmarkEngagementRate ? 'bg-green-500' : 'bg-yellow-500'
+                          }`}
+                          style={{ width: `${Math.min((Number(comparisons.engagementRate) / (comparisons.benchmarkEngagementRate * 2)) * 100, 100)}%` }}
+                        />
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                <div className="border-t border-gray-100 pt-3">
                   <div className="flex justify-between text-sm mb-1">
                     <span className="text-gray-600">Avg. Campaign Budget</span>
                     <span className="font-semibold text-gray-900">
                       ${comparisons.industryAverageBudget ? Number(comparisons.industryAverageBudget).toLocaleString() : 'N/A'}
                     </span>
                   </div>
+                  {comparisons.tierEarningsRange && (
+                    <p className="text-xs text-gray-400">Tier range: ${comparisons.tierEarningsRange.min.toLocaleString()} – ${comparisons.tierEarningsRange.max.toLocaleString()}</p>
+                  )}
                 </div>
+
                 <div>
                   <div className="flex justify-between text-sm mb-1">
                     <span className="text-gray-600">Avg. Campaign Reach</span>
@@ -545,16 +590,65 @@ export default function CreatorAnalysis() {
                       {comparisons.industryAverageReach
                         ? (comparisons.industryAverageReach >= 1000000
                           ? `${(comparisons.industryAverageReach / 1000000).toFixed(1)}M`
-                          : comparisons.industryAverageReach.toLocaleString())
+                          : comparisons.industryAverageReach >= 1000
+                            ? `${(comparisons.industryAverageReach / 1000).toFixed(1)}K`
+                            : comparisons.industryAverageReach.toLocaleString())
                         : 'N/A'}
                     </span>
                   </div>
                 </div>
-                <div>
-                  <div className="flex justify-between text-sm mb-1">
-                    <span className="text-gray-600">Creator Positioning</span>
-                    <span className="font-semibold text-gray-900">{comparisons.creatorPositioning || 'N/A'}</span>
+
+                {/* CPM & ROI */}
+                {(comparisons.estimatedCPM || comparisons.estimatedROI) && (
+                  <div className="flex gap-3 border-t border-gray-100 pt-3">
+                    {comparisons.estimatedCPM && (
+                      <div className="flex-1 bg-blue-50 rounded-lg p-3 text-center">
+                        <div className="text-lg font-bold text-blue-700">${comparisons.estimatedCPM}</div>
+                        <div className="text-xs text-blue-500">Est. CPM</div>
+                      </div>
+                    )}
+                    {comparisons.estimatedROI && (
+                      <div className="flex-1 bg-green-50 rounded-lg p-3 text-center">
+                        <div className="text-lg font-bold text-green-700">{comparisons.estimatedROI}x</div>
+                        <div className="text-xs text-green-500">Est. ROI</div>
+                      </div>
+                    )}
                   </div>
+                )}
+
+                {/* Creator Positioning */}
+                <div className="border-t border-gray-100 pt-3">
+                  <div className="flex justify-between text-sm mb-2">
+                    <span className="text-gray-600">Creator Positioning</span>
+                    <span className={`font-bold ${
+                      (comparisons.positioningScore || 0) >= 70 ? 'text-green-600' :
+                      (comparisons.positioningScore || 0) >= 55 ? 'text-blue-600' :
+                      (comparisons.positioningScore || 0) >= 40 ? 'text-yellow-600' :
+                      'text-gray-600'
+                    }`}>
+                      {comparisons.creatorPositioning || 'N/A'}
+                    </span>
+                  </div>
+                  {comparisons.positioningScore != null && (
+                    <div className="w-full bg-gray-200 rounded-full h-2 mb-2">
+                      <div
+                        className={`h-2 rounded-full ${
+                          comparisons.positioningScore >= 70 ? 'bg-green-500' :
+                          comparisons.positioningScore >= 55 ? 'bg-blue-500' :
+                          comparisons.positioningScore >= 40 ? 'bg-yellow-500' :
+                          'bg-gray-400'
+                        }`}
+                        style={{ width: `${comparisons.positioningScore}%` }}
+                      />
+                    </div>
+                  )}
+                  {comparisons.positioningFactors && comparisons.positioningFactors.length > 0 && (
+                    <div className="flex flex-wrap gap-1 mt-1">
+                      {comparisons.positioningFactors.map((factor, i) => (
+                        <span key={i} className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded">{factor}</span>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
             </div>

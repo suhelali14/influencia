@@ -57,6 +57,15 @@ export interface DetailedAnalysis {
     industryAverageBudget: number
     industryAverageReach: number
     creatorPositioning: string
+    creatorTier?: string
+    totalFollowers?: number
+    engagementRate?: number | null
+    benchmarkEngagementRate?: number
+    estimatedCPM?: number
+    estimatedROI?: number
+    positioningScore?: number
+    positioningFactors?: string[]
+    tierEarningsRange?: { min: number; max: number }
   }
   aiAnalysis?: AIAnalysis
 }

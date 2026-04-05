@@ -5,6 +5,7 @@ import { Creator } from '../creators/entities/creator.entity';
 import { Campaign, CampaignStatus } from '../campaigns/entities/campaign.entity';
 import { Collaboration, CollaborationStatus } from '../campaigns/entities/collaboration.entity';
 import { AIAnalysisReport } from './entities/ai-analysis-report.entity';
+import { SocialAccount } from '../social/entities/social-account.entity';
 import { AIPythonService } from './ai-python.service';
 import { AiMatchingService } from '../ai/ai-matching.service';
 import { PaginationDto, PaginatedResponse } from '../common/dto/pagination.dto';
@@ -49,6 +50,8 @@ export class MatchingService {
     private collaborationsRepository: Repository<Collaboration>,
     @InjectRepository(AIAnalysisReport)
     private aiReportsRepository: Repository<AIAnalysisReport>,
+    @InjectRepository(SocialAccount)
+    private socialAccountsRepository: Repository<SocialAccount>,
     private aiPythonService: AIPythonService,
     private aiMatchingService: AiMatchingService,
   ) {}
@@ -448,20 +451,226 @@ export class MatchingService {
     return recommendations;
   }
 
+  /**
+   * Industry benchmark data derived from ML training data (data_generator.py)
+   * and real influencer marketing industry standards.
+   */
+  private readonly INDUSTRY_BENCHMARKS = {
+    // Tier thresholds (follower count)
+    tierThresholds: {
+      nano: { min: 0, max: 10_000 },
+      micro: { min: 10_000, max: 50_000 },
+      mid: { min: 50_000, max: 500_000 },
+      macro: { min: 500_000, max: 1_000_000 },
+      mega: { min: 1_000_000, max: Infinity },
+    },
+    // Average campaign earnings per post by tier
+    avgEarningsPerCampaign: {
+      nano: { min: 100, max: 500, avg: 250 },
+      micro: { min: 500, max: 2000, avg: 1000 },
+      mid: { min: 2000, max: 10000, avg: 5000 },
+      macro: { min: 10000, max: 50000, avg: 25000 },
+      mega: { min: 50000, max: 500000, avg: 150000 },
+    },
+    // Expected engagement rate by platform & tier
+    engagementBenchmarks: {
+      instagram: { nano: 8, micro: 6, mid: 4, macro: 2.5, mega: 1.5 },
+      youtube: { nano: 6, micro: 5, mid: 3.5, macro: 2, mega: 1.2 },
+      tiktok: { nano: 12, micro: 10, mid: 7, macro: 4, mega: 2.5 },
+      twitter: { nano: 4, micro: 3, mid: 2, macro: 1.2, mega: 0.8 },
+    } as Record<string, Record<string, number>>,
+    // Average reach multiplier (reach as % of followers)
+    reachMultiplier: {
+      nano: 0.35,
+      micro: 0.28,
+      mid: 0.20,
+      macro: 0.15,
+      mega: 0.10,
+    } as Record<string, number>,
+    // Average ROI multiplier by tier (matched campaigns)
+    roiByTier: {
+      nano: 8.0,
+      micro: 6.0,
+      mid: 4.5,
+      macro: 3.5,
+      mega: 2.5,
+    } as Record<string, number>,
+    // CPM (cost per mille / cost per 1000 impressions) by platform
+    cpmByPlatform: {
+      instagram: { min: 5, max: 15, avg: 10 },
+      youtube: { min: 8, max: 25, avg: 15 },
+      tiktok: { min: 3, max: 10, avg: 6 },
+      twitter: { min: 3, max: 8, avg: 5 },
+    } as Record<string, { min: number; max: number; avg: number }>,
+    // Category-specific budget multipliers
+    categoryBudgetMultiplier: {
+      fashion: 1.3, beauty: 1.25, luxury: 2.0, tech: 1.4, gaming: 1.1,
+      fitness: 1.0, food: 0.9, travel: 1.3, finance: 1.5, education: 0.8,
+      entertainment: 1.0, music: 1.1, health: 1.2, lifestyle: 1.0, parenting: 0.85,
+      pets: 0.8, sports: 1.1, automotive: 1.4, home: 0.9, art: 0.75,
+    } as Record<string, number>,
+  };
+
+  private getCreatorTier(followers: number): string {
+    const { tierThresholds } = this.INDUSTRY_BENCHMARKS;
+    if (followers >= tierThresholds.mega.min) return 'mega';
+    if (followers >= tierThresholds.macro.min) return 'macro';
+    if (followers >= tierThresholds.mid.min) return 'mid';
+    if (followers >= tierThresholds.micro.min) return 'micro';
+    return 'nano';
+  }
+
   private async getComparativeMetrics(creator: Creator, campaign: Campaign): Promise<any> {
-    // Get average metrics from similar campaigns
-    const similarCampaigns = await this.campaignsRepository.find({
-      where: { category: campaign.category, status: CampaignStatus.COMPLETED },
-      take: 10,
+    // ── 1. Get creator's social accounts for real follower / engagement data ──
+    const socialAccounts = await this.socialAccountsRepository.find({
+      where: { creator_id: creator.id, is_connected: true },
     });
 
-    const avgBudget = similarCampaigns.reduce((sum, c) => sum + Number(c.budget), 0) / similarCampaigns.length;
-    const avgReach = similarCampaigns.reduce((sum, c) => sum + c.total_reach, 0) / similarCampaigns.length;
+    // Aggregate follower count and best engagement rate across platforms
+    let totalFollowers = 0;
+    let bestEngagementRate = 0;
+    let primaryPlatform = campaign.platform?.toLowerCase() || 'instagram';
+    let platformFollowers = 0;
+
+    for (const account of socialAccounts) {
+      const followers = account.followers_count || 0;
+      const engagement = Number(account.engagement_rate) || 0;
+      totalFollowers += followers;
+      if (engagement > bestEngagementRate) bestEngagementRate = engagement;
+      if (account.platform === primaryPlatform) {
+        platformFollowers = followers;
+      }
+    }
+
+    // Fallback: if no social accounts linked, estimate from campaign history
+    if (totalFollowers === 0) {
+      totalFollowers = this.getTotalFollowers(creator);
+    }
+    // Use platform-specific followers if available, otherwise total
+    const relevantFollowers = platformFollowers > 0 ? platformFollowers : totalFollowers;
+    const tier = this.getCreatorTier(relevantFollowers);
+
+    // ── 2. Calculate Industry Average Budget for this category + tier ──
+    const category = (campaign.category || '').toLowerCase();
+    const categoryMultiplier = this.INDUSTRY_BENCHMARKS.categoryBudgetMultiplier[category] || 1.0;
+    const tierEarnings = this.INDUSTRY_BENCHMARKS.avgEarningsPerCampaign[tier];
+    const industryAverageBudget = Math.round(tierEarnings.avg * categoryMultiplier);
+
+    // Also check DB for real completed campaign data to blend
+    const similarCampaigns = await this.campaignsRepository.find({
+      where: { category: campaign.category, status: CampaignStatus.COMPLETED },
+      take: 20,
+    });
+    let dbAvgBudget = 0;
+    if (similarCampaigns.length > 0) {
+      dbAvgBudget = similarCampaigns.reduce((sum, c) => sum + Number(c.budget), 0) / similarCampaigns.length;
+    }
+    // Blend: if we have real data, weight it 60% vs 40% industry benchmark
+    const blendedBudget = dbAvgBudget > 0
+      ? Math.round(dbAvgBudget * 0.6 + industryAverageBudget * 0.4)
+      : industryAverageBudget;
+
+    // ── 3. Calculate Industry Average Reach ──
+    const reachMultiplier = this.INDUSTRY_BENCHMARKS.reachMultiplier[tier];
+    const estimatedReachPerPost = Math.round(relevantFollowers * reachMultiplier);
+    let dbAvgReach = 0;
+    if (similarCampaigns.length > 0) {
+      dbAvgReach = similarCampaigns.reduce((sum, c) => sum + (c.total_reach || 0), 0) / similarCampaigns.length;
+    }
+    const blendedReach = dbAvgReach > 0
+      ? Math.round(dbAvgReach * 0.6 + estimatedReachPerPost * 0.4)
+      : estimatedReachPerPost;
+
+    // ── 4. Engagement Rate Benchmark ──
+    const platformBenchmarks = this.INDUSTRY_BENCHMARKS.engagementBenchmarks[primaryPlatform]
+      || this.INDUSTRY_BENCHMARKS.engagementBenchmarks.instagram;
+    const benchmarkEngagement = platformBenchmarks[tier] || 4.0;
+    const creatorEngagement = bestEngagementRate > 0 ? bestEngagementRate : null;
+
+    // ── 5. CPM Estimate ──
+    const platformCPM = this.INDUSTRY_BENCHMARKS.cpmByPlatform[primaryPlatform]
+      || this.INDUSTRY_BENCHMARKS.cpmByPlatform.instagram;
+
+    // ── 6. Creator Positioning (multi-factor scoring) ──
+    let positioningScore = 0;
+    let positioningFactors: string[] = [];
+
+    // Factor 1: Engagement vs benchmark (40% weight)
+    if (creatorEngagement !== null) {
+      const engagementRatio = creatorEngagement / benchmarkEngagement;
+      if (engagementRatio >= 1.5) {
+        positioningScore += 40;
+        positioningFactors.push('Exceptional engagement rate');
+      } else if (engagementRatio >= 1.0) {
+        positioningScore += 30;
+        positioningFactors.push('Above-average engagement');
+      } else if (engagementRatio >= 0.7) {
+        positioningScore += 20;
+        positioningFactors.push('Average engagement');
+      } else {
+        positioningScore += 10;
+        positioningFactors.push('Below-average engagement');
+      }
+    } else {
+      positioningScore += 20; // Neutral if no data
+    }
+
+    // Factor 2: Rating (25% weight)
+    const rating = Number(creator.overall_rating) || 0;
+    if (rating >= 4.5) {
+      positioningScore += 25;
+      positioningFactors.push('Excellent brand rating');
+    } else if (rating >= 4.0) {
+      positioningScore += 20;
+      positioningFactors.push('Good brand rating');
+    } else if (rating >= 3.0) {
+      positioningScore += 12;
+    } else {
+      positioningScore += 5;
+    }
+
+    // Factor 3: Experience (20% weight)
+    const campaigns = creator.total_campaigns || 0;
+    if (campaigns >= 20) {
+      positioningScore += 20;
+      positioningFactors.push('Veteran creator');
+    } else if (campaigns >= 10) {
+      positioningScore += 15;
+    } else if (campaigns >= 5) {
+      positioningScore += 10;
+    } else {
+      positioningScore += 5;
+    }
+
+    // Factor 4: Follower tier (15% weight)
+    const tierScoreMap: Record<string, number> = { mega: 15, macro: 13, mid: 10, micro: 7, nano: 5 };
+    positioningScore += tierScoreMap[tier] || 5;
+
+    // Map score to positioning label
+    let creatorPositioning: string;
+    if (positioningScore >= 85) creatorPositioning = 'Top 5% — Elite';
+    else if (positioningScore >= 70) creatorPositioning = 'Top 15% — Excellent';
+    else if (positioningScore >= 55) creatorPositioning = 'Above Average';
+    else if (positioningScore >= 40) creatorPositioning = 'Average';
+    else creatorPositioning = 'Below Average';
+
+    // ── 7. Estimated ROI ──
+    const tierROI = this.INDUSTRY_BENCHMARKS.roiByTier[tier] || 4.0;
 
     return {
-      industryAverageBudget: avgBudget,
-      industryAverageReach: avgReach,
-      creatorPositioning: creator.overall_rating >= 4.0 ? 'Above Average' : 'Average',
+      industryAverageBudget: blendedBudget,
+      industryAverageReach: blendedReach,
+      creatorPositioning,
+      // Extended benchmark data
+      creatorTier: tier.charAt(0).toUpperCase() + tier.slice(1),
+      totalFollowers: relevantFollowers,
+      engagementRate: creatorEngagement,
+      benchmarkEngagementRate: benchmarkEngagement,
+      estimatedCPM: platformCPM.avg,
+      estimatedROI: tierROI,
+      positioningScore,
+      positioningFactors,
+      tierEarningsRange: { min: tierEarnings.min, max: tierEarnings.max },
     };
   }
 

@@ -387,12 +387,24 @@ export class PdfGenerationService {
       </div>
       <div class="benchmarks-grid">
         <div class="benchmark-item">
+          <div class="benchmark-val">${d.creatorTier}</div>
+          <div class="benchmark-label">Creator Tier</div>
+        </div>
+        <div class="benchmark-item">
           <div class="benchmark-val">₹${d.industryAvgBudget}</div>
           <div class="benchmark-label">Avg. Industry Budget</div>
         </div>
         <div class="benchmark-item">
           <div class="benchmark-val">${d.industryAvgReach}</div>
           <div class="benchmark-label">Avg. Industry Reach</div>
+        </div>
+        <div class="benchmark-item">
+          <div class="benchmark-val">${d.creatorEngagement}</div>
+          <div class="benchmark-label">Engagement vs ${d.benchmarkEngagement}% avg</div>
+        </div>
+        <div class="benchmark-item">
+          <div class="benchmark-val">$${d.estimatedCPM}</div>
+          <div class="benchmark-label">Est. CPM</div>
         </div>
         <div class="benchmark-item">
           <div class="benchmark-val">${d.creatorPositioning}</div>
@@ -542,6 +554,10 @@ ${d.fullReport ? `
       industryAvgBudget: Number(comparisons?.industryAverageBudget || 0).toLocaleString(),
       industryAvgReach: Number(comparisons?.industryAverageReach || 0).toLocaleString(),
       creatorPositioning: comparisons?.creatorPositioning || 'N/A',
+      creatorTier: comparisons?.creatorTier || 'N/A',
+      creatorEngagement: comparisons?.engagementRate != null ? `${Number(comparisons.engagementRate).toFixed(2)}%` : 'N/A',
+      benchmarkEngagement: comparisons?.benchmarkEngagementRate || 4,
+      estimatedCPM: comparisons?.estimatedCPM || 10,
     };
   }
 
