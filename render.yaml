@@ -52,10 +52,7 @@ services:
           type: redis
           property: port
       - key: REDIS_PASSWORD
-        fromService:
-          name: influencia-redis
-          type: redis
-          property: password
+        value: ""  # Render free Redis has no password
       - key: REDIS_USERNAME
         value: ""
       - key: REDIS_TLS
@@ -88,7 +85,7 @@ services:
         fromService:
           name: influencia-frontend
           type: web
-          property: url
+          property: host
 
   # ─────────────────────────────────────────────────────────
   # 2. Frontend — React + Vite (Docker/Nginx, Free Tier)
