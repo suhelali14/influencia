@@ -9,7 +9,7 @@ services:
   - type: web
     name: influencia-backend
     runtime: docker
-    dockerfilePath: ./backend/Dockerfile
+    dockerfilePath: ./Dockerfile
     dockerContext: ./backend
     plan: free
     region: oregon
@@ -87,7 +87,7 @@ services:
   - type: web
     name: influencia-frontend
     runtime: docker
-    dockerfilePath: ./frontend/Dockerfile
+    dockerfilePath: ./Dockerfile
     dockerContext: ./frontend
     plan: free
     region: oregon
@@ -108,7 +108,7 @@ services:
   - type: web
     name: influencia-ai
     runtime: docker
-    dockerfilePath: ./ai/Dockerfile
+    dockerfilePath: ./Dockerfile
     dockerContext: ./ai
     plan: free
     region: oregon
