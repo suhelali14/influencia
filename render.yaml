@@ -40,23 +40,17 @@ services:
       - key: JWT_EXPIRATION
         value: 7d
 
-      # Redis — Render Free Key Value
+      # Redis — Redis Cloud
       - key: REDIS_HOST
-        fromService:
-          name: influencia-redis
-          type: redis
-          property: host
+        value: "redis-12525.c74.us-east-1-4.ec2.cloud.redislabs.com"
       - key: REDIS_PORT
-        fromService:
-          name: influencia-redis
-          type: redis
-          property: port
+        value: "12525"
       - key: REDIS_PASSWORD
-        value: ""  # Render free Redis has no password
+        value: "WNw2ECiGTMY2u64cEnx16X4FkflW4QVn"
       - key: REDIS_USERNAME
-        value: ""
+        value: "default"
       - key: REDIS_TLS
-        value: "true"
+        value: "false"
 
       # AI Service — internal URL
       - key: AI_SERVICE_URL
@@ -131,12 +125,5 @@ services:
       - key: CORS_ORIGINS
         value: "*"
 
-  # ─────────────────────────────────────────────────────────
-  # 4. Redis — Session & Cache Store (Free Tier)
-  # ─────────────────────────────────────────────────────────
-  - type: redis
-    name: influencia-redis
-    plan: free
-    region: oregon
-    maxmemoryPolicy: allkeys-lru
-    ipAllowList: []  # allow all
+  # Redis — Using existing Redis Cloud instance
+  # Host: redis-12525.c74.us-east-1-4.ec2.cloud.redislabs.com:12525
