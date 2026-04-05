@@ -1,27 +1,32 @@
-# Render Blueprint — One-Click Deploy for Influencia Platform
-# Usage: Push to GitHub, then go to https://dashboard.render.com/blueprints
+# Render Blueprint — Influencia Platform
 # Docs: https://render.com/docs/blueprint-spec
+#
+# NOTE: Do NOT combine rootDir with dockerContext —
+# rootDir shifts the CWD, then dockerContext is applied relative to it,
+# causing double-path errors (e.g. backend/backend).
+# We use only dockerfilePath + dockerContext, both relative to repo root.
 
 services:
-  # ─────────────────────────────────────────────────────────
-  # 1. Backend — NestJS API (Docker, Free Tier)
-  # ─────────────────────────────────────────────────────────
+  # ─────────────────────────────────────────────
+  # 1. Backend — NestJS API
+  # ─────────────────────────────────────────────
   - type: web
     name: influencia-backend
     runtime: docker
-    rootDir: backend
     dockerfilePath: ./backend/Dockerfile
     dockerContext: ./backend
     plan: free
     region: oregon
     healthCheckPath: /health
+    buildFilter:
+      paths:
+        - backend/**
     envVars:
       - key: NODE_ENV
         value: production
       - key: PORT
-        value: 3000
-
-      # Database — Neon PostgreSQL (individual vars used by TypeORM)
+        value: "3000"
+      # Neon PostgreSQL
       - key: DATABASE_HOST
         sync: false
       - key: DATABASE_PORT
@@ -34,14 +39,12 @@ services:
         sync: false
       - key: DATABASE_SSL
         value: "true"
-
       # JWT
       - key: JWT_SECRET
         generateValue: true
       - key: JWT_EXPIRATION
-        value: 7d
-
-      # Redis — Redis Cloud
+        value: "7d"
+      # Redis Cloud
       - key: REDIS_HOST
         value: "redis-12525.c74.us-east-1-4.ec2.cloud.redislabs.com"
       - key: REDIS_PORT
@@ -52,70 +55,61 @@ services:
         value: "default"
       - key: REDIS_TLS
         value: "false"
-
-      # AI Service — internal URL
+      # AI Service URL (set after AI deploys)
       - key: AI_SERVICE_URL
-        fromService:
-          name: influencia-ai
-          type: web
-          property: hostport
+        sync: false
       - key: ML_API_URL
-        fromService:
-          name: influencia-ai
-          type: web
-          property: hostport
-
+        sync: false
       # Session
       - key: SESSION_TTL
         value: "604800"
       - key: MAX_SESSIONS_PER_USER
         value: "5"
-
-      # CORS — allow frontend origin
+      # CORS
       - key: CORS_ORIGIN
         value: "*"
-
-      # Frontend URL
+      # Frontend URL (set after frontend deploys)
       - key: FRONTEND_URL
-        fromService:
-          name: influencia-frontend
-          type: web
-          property: host
+        sync: false
 
-  # ─────────────────────────────────────────────────────────
-  # 2. Frontend — React + Vite (Docker/Nginx, Free Tier)
-  # ─────────────────────────────────────────────────────────
+  # ─────────────────────────────────────────────
+  # 2. Frontend — React + Vite + Nginx
+  # ─────────────────────────────────────────────
   - type: web
     name: influencia-frontend
     runtime: docker
-    rootDir: frontend
     dockerfilePath: ./frontend/Dockerfile
     dockerContext: ./frontend
     plan: free
     region: oregon
     healthCheckPath: /health
+    buildFilter:
+      paths:
+        - frontend/**
     envVars:
       - key: PORT
         value: "10000"
-      # Build-time: Vite bakes these into the JS bundle
-      # ⚠️ Set AFTER backend + AI deploy, then trigger manual redeploy
+      # Build-time: Vite bakes these into JS bundle
+      # Set AFTER backend + AI deploy, then trigger manual redeploy
       - key: VITE_API_URL
-        sync: false  # set to: https://influencia-backend.onrender.com/v1
+        sync: false
       - key: VITE_AI_API_URL
-        sync: false  # set to: https://influencia-ai.onrender.com
+        sync: false
 
-  # ─────────────────────────────────────────────────────────
-  # 3. AI/ML Service — Python Flask + ML Models (Free Tier)
-  # ─────────────────────────────────────────────────────────
+  # ─────────────────────────────────────────────
+  # 3. AI/ML Service — Flask + PyTorch
+  # ─────────────────────────────────────────────
   - type: web
     name: influencia-ai
     runtime: docker
-    rootDir: ai
     dockerfilePath: ./ai/Dockerfile
     dockerContext: ./ai
     plan: free
     region: oregon
     healthCheckPath: /health
+    buildFilter:
+      paths:
+        - ai/**
     envVars:
       - key: PORT
         value: "5001"
@@ -127,6 +121,3 @@ services:
         value: "1"
       - key: CORS_ORIGINS
         value: "*"
-
-  # Redis — Using existing Redis Cloud instance
-  # Host: redis-12525.c74.us-east-1-4.ec2.cloud.redislabs.com:12525
