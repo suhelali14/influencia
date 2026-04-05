@@ -1,0 +1,14 @@
+__pycache__
+*.pyc
+*.pyo
+.env
+.git
+.gitignore
+.vscode
+*.md
+benchmark_output.txt
+test_*.py
+simple_test.py
+*.ipynb
+models/*.pkl
+embeddings_cache/
