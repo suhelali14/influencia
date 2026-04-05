@@ -17,7 +17,7 @@ services:
     dockerContext: ./backend
     plan: free
     region: oregon
-    healthCheckPath: /health
+    healthCheckPath: /v1/health
     buildFilter:
       paths:
         - backend/**
