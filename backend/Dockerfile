@@ -27,7 +27,7 @@ WORKDIR /app
 RUN addgroup -g 1001 -S nodejs && \
     adduser -S nestjs -u 1001
 
-# Copy built application
+# Copy built application (nest build outputs to dist/src/ due to baseUrl: './')
 COPY --from=builder --chown=nestjs:nodejs /app/dist ./dist
 COPY --from=builder --chown=nestjs:nodejs /app/node_modules ./node_modules
 COPY --from=builder --chown=nestjs:nodejs /app/package*.json ./
@@ -48,4 +48,5 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
     CMD node -e "require('http').get('http://localhost:3000/health', (r) => process.exit(r.statusCode === 200 ? 0 : 1))"
 
 # Start application — dns-fix.js patches DNS for Neon serverless PostgreSQL
-CMD ["node", "-r", "./dns-fix.js", "dist/main.js"]
+# Note: nest build with baseUrl='./' outputs to dist/src/
+CMD ["node", "-r", "./dns-fix.js", "dist/src/main.js"]

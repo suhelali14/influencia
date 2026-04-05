@@ -15,9 +15,7 @@ This is crucial for a healthy marketplace:
 """
 
 import numpy as np
-from typing import Dict, List, Optional, Tuple, Set
-import os
-import json
+from typing import Any, Dict, List, Optional, Tuple, Set
 from collections import defaultdict
 import logging
 from datetime import datetime
@@ -30,21 +28,16 @@ logger = logging.getLogger(__name__)
 
 class ReRanker:
     """
-    Advanced re-ranking module with diversity, exploration, fairness,
-    and position bias correction.
+    Re-ranking module for recommendation diversity and exploration.
     
-    Supports:
-    - MMR-based diversity with embedding and geographic diversity
-    - Contextual Thompson Sampling (campaign-category-aware)
-    - Position bias correction via inverse propensity weighting
-    - Persistent exploration stats across restarts
+    This ensures recommendations are not just accurate but also:
+    - Diverse (different categories, tiers, styles)
+    - Fair (balanced exposure across creators)
+    - Explorative (test new creators)
     """
     
     def __init__(self, config: Optional[RecommendationConfig] = None):
         self.config = config or RecommendationConfig()
-        self._exploration_stats: Dict[str, Dict] = {}  # creator_id -> {alpha, beta, ...}
-        self._category_stats: Dict[str, Dict[str, Dict]] = {}  # category -> creator_id -> {alpha, beta}
-        self._stats_path = 'ai/models/exploration_stats.json'
         self._creator_impressions = defaultdict(int)  # Track exposure
         self._creator_clicks = defaultdict(int)  # Track engagement
         
@@ -87,8 +80,7 @@ class ReRanker:
         remaining = [c for c in candidates if c not in exploit_candidates]
         explore_candidates = self._select_exploration(
             remaining, 
-            n_explore,
-            campaign.categories[0] if campaign.categories else "general"
+            n_explore
         )
         
         # Combine and interleave
@@ -102,9 +94,6 @@ class ReRanker:
             # Position-based score adjustment
             position_factor = 1.0 - (i / len(final)) * 0.2
             result.final_score = result.ranking_score * position_factor
-        
-        # 5. Position bias correction
-        final = self._correct_position_bias(final)
         
         return final[:limit]
     
@@ -211,11 +200,13 @@ class ReRanker:
     def _select_exploration(
         self,
         candidates: List[Tuple[Creator, MatchResult]],
-        n: int,
-        category: str = 'general'
+        n: int
     ) -> List[Tuple[Creator, MatchResult]]:
         """
         Select exploration candidates using Thompson Sampling.
+        
+        Thompson Sampling balances exploration and exploitation by
+        sampling from posterior distributions of creator quality.
         """
         if not candidates or n <= 0:
             return []
@@ -223,45 +214,26 @@ class ReRanker:
         # Score candidates by exploration value
         scored = []
         for creator, result in candidates:
-            sampled_ctr = self._thompson_sample(creator.id, category)
+            # Thompson Sampling: sample from Beta distribution
+            # Beta(successes + 1, failures + 1)
+            impressions = self._creator_impressions[creator.id]
+            clicks = self._creator_clicks[creator.id]
+            
+            if impressions == 0:
+                # New creator - high exploration value
+                sampled_ctr = np.random.beta(1, 1)  # Uniform prior
+                exploration_bonus = 0.3
+            else:
+                sampled_ctr = np.random.beta(clicks + 1, impressions - clicks + 1)
+                exploration_bonus = 0.1 / (1 + np.log1p(impressions))
             
             # Combine ranking score with exploration value
-            explore_score = result.ranking_score * 0.5 + sampled_ctr * 0.5
+            explore_score = result.ranking_score * 0.5 + sampled_ctr * 0.3 + exploration_bonus * 0.2
             scored.append((creator, result, explore_score))
         
         # Sort by exploration score and select top n
         scored.sort(key=lambda x: x[2], reverse=True)
         return [(c, r) for c, r, _ in scored[:n]]
-
-    def _thompson_sample(
-        self,
-        creator_id: str,
-        category: str = 'general'
-    ) -> float:
-        """
-        Contextual Thompson Sampling.
-        
-        Uses campaign category as context for better exploration.
-        Each (creator, category) pair has its own Beta distribution.
-        """
-        # Try category-specific stats first (contextual)
-        cat_stats = self._category_stats.get(category, {})
-        if creator_id in cat_stats:
-            stats = cat_stats[creator_id]
-        elif creator_id in self._exploration_stats:
-            stats = self._exploration_stats[creator_id]
-        else:
-            # New creator: optimistic prior (exploration)
-            stats = {'alpha': 2.0, 'beta': 1.0, 'n_shown': 0}
-            self._exploration_stats[creator_id] = stats
-        
-        alpha = stats.get('alpha', 2.0)
-        beta_param = stats.get('beta', 1.0)
-        
-        # Sample from Beta distribution
-        sample = np.random.beta(alpha, beta_param)
-        
-        return float(sample)
     
     def _interleave(
         self,
@@ -363,92 +335,6 @@ class ReRanker:
         """Reset exploration statistics"""
         self._creator_impressions.clear()
         self._creator_clicks.clear()
-    
-    def _correct_position_bias(
-        self, candidates: List[Tuple[Creator, MatchResult]]
-    ) -> List[Tuple[Creator, MatchResult]]:
-        """
-        Apply inverse propensity weighting to correct for position bias.
-        
-        Items that were previously shown in lower positions get a small boost
-        to counteract the fact that users are less likely to see/click them.
-        """
-        if len(candidates) <= 1:
-            return candidates
-        
-        for i, (creator, result) in enumerate(candidates):
-            position = i + 1
-            propensity = 1.0 / np.log2(position + 1)
-            correction = 1.0 + (1.0 - propensity) * 0.1
-            result.final_score *= correction
-        
-        candidates.sort(key=lambda x: x[1].final_score, reverse=True)
-        return candidates
-    
-    def record_outcome(
-        self, creator_id: str, success: bool, category: str = 'general'
-    ) -> None:
-        """Record outcome for Thompson Sampling with category context."""
-        if creator_id not in self._exploration_stats:
-            self._exploration_stats[creator_id] = {
-                'alpha': 2.0, 'beta': 1.0, 'n_shown': 0
-            }
-        
-        stats = self._exploration_stats[creator_id]
-        if success:
-            stats['alpha'] += 1
-        else:
-            stats['beta'] += 1
-        stats['n_shown'] = stats.get('n_shown', 0) + 1
-        
-        # Update category-specific stats (contextual)
-        if category not in self._category_stats:
-            self._category_stats[category] = {}
-        if creator_id not in self._category_stats[category]:
-            self._category_stats[category][creator_id] = {
-                'alpha': 2.0, 'beta': 1.0, 'n_shown': 0
-            }
-        
-        cat_stats = self._category_stats[category][creator_id]
-        if success:
-            cat_stats['alpha'] += 1
-        else:
-            cat_stats['beta'] += 1
-        cat_stats['n_shown'] = cat_stats.get('n_shown', 0) + 1
-        
-        # Auto-save periodically
-        total = sum(s.get('n_shown', 0) for s in self._exploration_stats.values())
-        if total % 50 == 0:
-            self.save_exploration_stats()
-    
-    def save_exploration_stats(self) -> None:
-        """Persist exploration stats to disk for cold-start avoidance."""
-        try:
-            data = {
-                'global': self._exploration_stats,
-                'category': self._category_stats,
-            }
-            os.makedirs(os.path.dirname(self._stats_path) or '.', exist_ok=True)
-            with open(self._stats_path, 'w') as f:
-                json.dump(data, f)
-            logger.info(f"Saved exploration stats for {len(self._exploration_stats)} creators")
-        except Exception as e:
-            logger.warning(f"Failed to save exploration stats: {e}")
-    
-    def load_exploration_stats(self) -> None:
-        """Load persisted exploration stats."""
-        try:
-            if os.path.exists(self._stats_path):
-                with open(self._stats_path, 'r') as f:
-                    data = json.load(f)
-                self._exploration_stats = data.get('global', {})
-                self._category_stats = data.get('category', {})
-                logger.info(
-                    f"Loaded exploration stats for "
-                    f"{len(self._exploration_stats)} creators"
-                )
-        except Exception as e:
-            logger.warning(f"Failed to load exploration stats: {e}")
 
 
 class BusinessRuleFilter:
