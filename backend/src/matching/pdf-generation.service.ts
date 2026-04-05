@@ -14,28 +14,33 @@ export class PdfGenerationService {
   private readonly logger = new Logger(PdfGenerationService.name);
 
   /**
-   * Generate comprehensive AI-powered PDF report using Puppeteer HTML→PDF
+   * Generate comprehensive AI-powered PDF report.
+   * Tries: 1) Puppeteer HTML→PDF (if Chromium available)
+   *        2) Comprehensive PDFKit fallback (always works)
    */
   async generateComprehensiveReport(data: ReportData): Promise<Buffer> {
-    const html = this.buildFullReportHTML(data);
-
+    // Attempt Puppeteer (full HTML report with styling)
     let puppeteer: any;
     try {
       puppeteer = require('puppeteer');
     } catch {
-      this.logger.error('Puppeteer not installed — falling back to simple PDF');
+      this.logger.warn('Puppeteer not available — using comprehensive PDFKit report');
       return this.fallbackSimplePdf(data);
     }
 
+    const html = this.buildFullReportHTML(data);
     let browser: any;
     try {
       browser = await puppeteer.launch({
         headless: true,
+        executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
         args: [
           '--no-sandbox',
           '--disable-setuid-sandbox',
           '--disable-gpu',
           '--disable-dev-shm-usage',
+          '--single-process',
+          '--no-zygote',
         ],
       });
 
@@ -48,9 +53,10 @@ export class PdfGenerationService {
         displayHeaderFooter: false,
         preferCSSPageSize: true,
       });
+      this.logger.log('✅ Generated PDF via Puppeteer (full HTML report)');
       return Buffer.from(pdfBuffer);
     } catch (err: any) {
-      this.logger.error(`PDF generation failed: ${err.message}`);
+      this.logger.warn(`Puppeteer failed (${err.message}) — using comprehensive PDFKit report`);
       return this.fallbackSimplePdf(data);
     } finally {
       if (browser) await browser.close();
@@ -847,34 +853,281 @@ body{font-family:'Segoe UI',system-ui,-apple-system,sans-serif;color:#1e293b;fon
       doc.on('error', reject);
 
       const d = this.extractReportVars(data);
+      const W = doc.page.width;
+      const M = 50; // margin
+      const CW = W - M * 2; // content width
 
-      doc.rect(0, 0, doc.page.width, 120).fill('#6366f1');
-      doc.fontSize(24).fillColor('#fff').font('Helvetica-Bold').text('Creator-Campaign Analysis', 50, 35, { align: 'center' });
-      doc.fontSize(11).fillColor('#e0e7ff').text(`${d.creatorName} × ${d.campaignTitle}`, { align: 'center' });
-      doc.fontSize(10).text(d.generatedDate, { align: 'center' });
+      // ─── Helpers ─────────────────────────────────────────
+      const drawBar = (x: number, y: number, w: number, pct: number, color: string) => {
+        doc.rect(x, y, w, 8).fill('#e5e7eb');
+        doc.rect(x, y, w * Math.min(pct / 100, 1), 8).fill(color);
+      };
+      const scoreColor = (v: number) => v >= 80 ? '#16a34a' : v >= 60 ? '#3b82f6' : v >= 40 ? '#f59e0b' : '#ef4444';
+      const section = (title: string) => {
+        if (doc.y > 680) doc.addPage();
+        doc.moveDown(0.8);
+        doc.rect(M, doc.y, CW, 22).fill('#f1f5f9');
+        doc.fontSize(11).fillColor('#1e293b').font('Helvetica-Bold').text(title, M + 8, doc.y + 5, { width: CW - 16 });
+        doc.moveDown(1.2);
+      };
+      const kv = (key: string, val: string) => {
+        const y = doc.y;
+        doc.fontSize(9).fillColor('#64748b').font('Helvetica').text(key, M, y, { width: 150 });
+        doc.fontSize(9).fillColor('#1e293b').font('Helvetica-Bold').text(val, M + 155, y, { width: CW - 155 });
+        doc.moveDown(0.4);
+      };
+
+      // ═══════════════════════════════════════════════════════
+      //  PAGE 1: COVER
+      // ═══════════════════════════════════════════════════════
+      doc.rect(0, 0, W, 160).fill('#6366f1');
+      doc.fontSize(10).fillColor('#c7d2fe').font('Helvetica').text('AI-POWERED ANALYSIS', M, 25, { align: 'center' });
+      doc.fontSize(26).fillColor('#ffffff').font('Helvetica-Bold').text('Creator-Campaign Match Report', M, 48, { align: 'center' });
+      doc.rect(W / 2 - 30, 90, 60, 3).fill('#a5b4fc');
+      doc.fontSize(11).fillColor('#e0e7ff').font('Helvetica').text(`${d.creatorName}  ×  ${d.campaignTitle}`, M, 103, { align: 'center' });
+      doc.fontSize(9).text(`${d.platform} • ${d.category} • ${d.generatedDate}`, M, 120, { align: 'center' });
+      // Score circle area
+      doc.fontSize(60).fillColor('#ffffff').font('Helvetica-Bold').text(`${d.matchScore}`, M, 138, { align: 'center', continued: false });
+
       doc.moveDown(4);
+      doc.fillColor('#6366f1').fontSize(9).font('Helvetica').text('OVERALL MATCH SCORE', M, doc.y, { align: 'center' });
+      doc.moveDown(1.5);
 
-      doc.fontSize(28).fillColor('#6366f1').font('Helvetica-Bold').text(`Match Score: ${d.matchScore}%`, 50);
-      doc.moveDown(0.5);
-      doc.fontSize(11).fillColor('#334155').font('Helvetica');
-      doc.text(`Estimated ROI: ${d.estimatedROI}% | Audience Overlap: ${d.audienceOverlap}% | ${d.experienceLevel}`);
-      doc.moveDown(1);
-
-      if (d.aiSummary) { doc.fontSize(10).fillColor('#475569').text(d.aiSummary, { width: 495 }); doc.moveDown(1); }
-
-      doc.fontSize(14).fillColor('#16a34a').font('Helvetica-Bold').text('Strengths'); doc.moveDown(0.3);
-      d.strengths.forEach((s: string) => doc.fontSize(10).fillColor('#166534').font('Helvetica').text(`• ${s}`));
-      doc.moveDown(1);
-
-      doc.fontSize(14).fillColor('#dc2626').font('Helvetica-Bold').text('Concerns'); doc.moveDown(0.3);
-      d.concerns.forEach((c: string) => doc.fontSize(10).fillColor('#991b1b').font('Helvetica').text(`• ${c}`));
-      doc.moveDown(1);
-
-      doc.addPage();
-      doc.fontSize(16).fillColor('#1e293b').font('Helvetica-Bold').text('Recommendations'); doc.moveDown(0.5);
-      d.allRecommendations.forEach((r: string, i: number) => {
-        doc.fontSize(10).fillColor('#374151').font('Helvetica').text(`${i + 1}. ${r}`); doc.moveDown(0.3);
+      // ─── Executive Summary ───────────────────────────────
+      section('Executive Summary');
+      // 4 key metrics in a row
+      const metricsData = [
+        { label: 'Match Score', value: `${d.matchScore}%`, sub: d.matchRating },
+        { label: 'Estimated ROI', value: `${d.estimatedROI}%`, sub: 'ML Prediction' },
+        { label: 'Audience Overlap', value: `${d.audienceOverlap}%`, sub: 'Demographic Fit' },
+        { label: 'Experience', value: d.experienceLevel, sub: `${d.totalCampaigns} campaigns` },
+      ];
+      const colW = CW / 4;
+      metricsData.forEach((m, i) => {
+        const x = M + i * colW;
+        const y = doc.y;
+        doc.fontSize(16).fillColor(scoreColor(parseInt(m.value) || 50)).font('Helvetica-Bold').text(m.value, x, y, { width: colW, align: 'center' });
+        doc.fontSize(8).fillColor('#475569').font('Helvetica').text(m.label, x, y + 20, { width: colW, align: 'center' });
+        doc.fontSize(7).fillColor('#94a3b8').text(m.sub, x, y + 30, { width: colW, align: 'center' });
       });
+      doc.moveDown(3.5);
+
+      // AI Summary
+      if (d.aiSummary) {
+        doc.rect(M, doc.y, CW, 1).fill('#e5e7eb');
+        doc.moveDown(0.5);
+        doc.fontSize(9).fillColor('#6366f1').font('Helvetica-Bold').text('🤖 AI Summary (Gemini)', M);
+        doc.moveDown(0.3);
+        doc.fontSize(9).fillColor('#475569').font('Helvetica').text(d.aiSummary, M, doc.y, { width: CW });
+        doc.moveDown(0.8);
+      }
+
+      // ─── Creator Profile ─────────────────────────────────
+      section('Creator Profile');
+      kv('Name', d.creatorName);
+      kv('Location', d.location);
+      kv('Rating', `${d.rating}/5.0 ⭐`);
+      kv('Categories', d.categories);
+      kv('Languages', d.languages);
+      kv('Budget Fit', d.budgetFit);
+      kv('Total Campaigns', `${d.totalCampaigns}`);
+
+      // ─── Campaign Details ────────────────────────────────
+      section('Campaign Details');
+      kv('Title', d.campaignTitle);
+      kv('Platform', d.platform);
+      kv('Category', d.category);
+      kv('Budget', `₹${d.budget}`);
+
+      // ═══════════════════════════════════════════════════════
+      //  PAGE 2: MODEL SCORES & PREDICTIONS
+      // ═══════════════════════════════════════════════════════
+      doc.addPage();
+      section('AI/ML Model Predictions — 5-Model Ensemble');
+      const predictions = [
+        { label: 'ML Match Score', value: d.mlMatchScore, unit: '%', model: 'RandomForest + XGBoost + NN' },
+        { label: 'Estimated ROI', value: d.estimatedROI, unit: '%', model: 'Gradient Boosting Regressor' },
+        { label: 'Success Probability', value: d.successProbability, unit: '%', model: 'India Neural Network' },
+        { label: 'Predicted Engagement', value: d.predictedEngagement, unit: '%', model: 'RandomForest Ensemble' },
+      ];
+      predictions.forEach((p) => {
+        const y = doc.y;
+        doc.fontSize(10).fillColor('#1e293b').font('Helvetica-Bold').text(p.label, M, y, { width: 180 });
+        doc.fontSize(14).fillColor(scoreColor(p.value)).font('Helvetica-Bold').text(`${p.value}${p.unit}`, M + 185, y - 2, { width: 80 });
+        doc.fontSize(7).fillColor('#94a3b8').font('Helvetica').text(p.model, M + 270, y + 2, { width: CW - 270 });
+        drawBar(M, y + 18, CW, p.value, scoreColor(p.value));
+        doc.moveDown(2);
+      });
+
+      // Model Score Breakdown
+      section('Model Score Breakdown');
+      const models = [
+        { name: 'sklearn RandomForest (25%)', score: d.modelScores.sklearn },
+        { name: 'India XGBoost R²=0.86 (35%)', score: d.modelScores.xgboost },
+        { name: 'India Neural Net (20%)', score: d.modelScores.nn },
+        { name: 'GradientBoosting ROI (10%)', score: d.modelScores.roi },
+        { name: 'RF Engagement (10%)', score: d.modelScores.engagement },
+      ];
+      models.forEach((m) => {
+        const y = doc.y;
+        doc.fontSize(9).fillColor('#334155').font('Helvetica').text(m.name, M, y, { width: 200 });
+        doc.fontSize(10).fillColor('#1e293b').font('Helvetica-Bold').text(`${m.score}`, M + CW - 30, y, { width: 30, align: 'right' });
+        drawBar(M + 205, y + 2, CW - 240, m.score, scoreColor(m.score));
+        doc.moveDown(1);
+      });
+
+      // Confidence
+      doc.moveDown(0.5);
+      kv('Prediction Confidence', `${d.confidence}%`);
+      drawBar(M, doc.y, CW, d.confidence, d.confidence >= 70 ? '#16a34a' : d.confidence >= 50 ? '#f59e0b' : '#ef4444');
+      doc.moveDown(1.5);
+
+      // ═══════════════════════════════════════════════════════
+      //  PAGE 3: SCORE COMPONENTS & MATCH ANALYSIS
+      // ═══════════════════════════════════════════════════════
+      doc.addPage();
+      section('Score Components — Feature Importance');
+      const features = [
+        { name: 'Category Match', value: Math.round((d.features.categoryMatch || 0) * 100) },
+        { name: 'Follower Fit', value: Math.round((d.features.followersMatch || 0) * 100) },
+        { name: 'Engagement Fit', value: Math.round((d.features.engagementMatch || 0) * 100) },
+        { name: 'Platform Match', value: Math.round((d.features.platformMatch || 0) * 100) },
+        { name: 'Experience Score', value: Math.round(Math.min((d.features.experienceScore || 0) / 5, 1) * 100) },
+        { name: 'Creator Rating', value: Math.round((d.features.rating || 0) / 5 * 100) },
+        { name: 'Budget Fit', value: Math.round((d.features.budgetFit || 0) * 100) },
+      ];
+      features.forEach((f) => {
+        const y = doc.y;
+        doc.fontSize(9).fillColor('#334155').font('Helvetica').text(f.name, M, y, { width: 130 });
+        drawBar(M + 135, y + 1, CW - 175, f.value, scoreColor(f.value));
+        doc.fontSize(9).fillColor('#1e293b').font('Helvetica-Bold').text(`${f.value}%`, M + CW - 35, y, { width: 35, align: 'right' });
+        doc.moveDown(1);
+      });
+
+      // Strengths
+      section('Key Strengths');
+      d.strengths.forEach((s: string) => {
+        doc.fontSize(9).fillColor('#166534').font('Helvetica').text(`✅  ${s}`, M + 5, doc.y, { width: CW - 10 });
+        doc.moveDown(0.4);
+      });
+      if (d.strengths.length === 0) {
+        doc.fontSize(9).fillColor('#94a3b8').font('Helvetica').text('No specific strengths identified', M + 5);
+        doc.moveDown(0.4);
+      }
+
+      // Concerns
+      section('Points to Consider');
+      d.concerns.forEach((c: string) => {
+        doc.fontSize(9).fillColor('#991b1b').font('Helvetica').text(`⚠️  ${c}`, M + 5, doc.y, { width: CW - 10 });
+        doc.moveDown(0.4);
+      });
+      if (d.concerns.length === 0) {
+        doc.fontSize(9).fillColor('#64748b').font('Helvetica').text('No significant concerns identified', M + 5);
+        doc.moveDown(0.4);
+      }
+
+      // Matching Reasons
+      section('Why This Creator Matches');
+      d.reasons.forEach((r: string, i: number) => {
+        doc.fontSize(9).fillColor('#1e3a5f').font('Helvetica').text(`${i + 1}.  ${r}`, M + 5, doc.y, { width: CW - 10 });
+        doc.moveDown(0.4);
+      });
+
+      // ═══════════════════════════════════════════════════════
+      //  PAGE 4: RISK, RECOMMENDATIONS, BENCHMARKS
+      // ═══════════════════════════════════════════════════════
+      doc.addPage();
+
+      // Risk Assessment
+      section(`Risk Assessment — ${d.riskLevel} Risk`);
+      const riskColors: Record<string, string> = { Low: '#16a34a', Medium: '#f59e0b', High: '#ef4444' };
+      const rc = riskColors[d.riskLevel] || '#f59e0b';
+      doc.rect(M, doc.y, CW, 6).fill('#e5e7eb');
+      const riskPct = d.riskLevel === 'Low' ? 25 : d.riskLevel === 'Medium' ? 55 : 85;
+      doc.rect(M, doc.y - 6, CW * riskPct / 100, 6).fill(rc);
+      doc.moveDown(0.8);
+      if (d.riskFactors.length > 0) {
+        doc.fontSize(9).fillColor('#334155').font('Helvetica-Bold').text('Risk Factors:', M);
+        doc.moveDown(0.3);
+        d.riskFactors.forEach((rf: string) => {
+          doc.fontSize(8).fillColor('#991b1b').font('Helvetica').text(`•  ${rf}`, M + 10, doc.y, { width: CW - 20 });
+          doc.moveDown(0.3);
+        });
+      }
+      if (d.mitigationStrategies.length > 0) {
+        doc.moveDown(0.3);
+        doc.fontSize(9).fillColor('#334155').font('Helvetica-Bold').text('Mitigation Strategies:', M);
+        doc.moveDown(0.3);
+        d.mitigationStrategies.forEach((ms: string) => {
+          doc.fontSize(8).fillColor('#166534').font('Helvetica').text(`→  ${ms}`, M + 10, doc.y, { width: CW - 20 });
+          doc.moveDown(0.3);
+        });
+      }
+
+      // Recommendations
+      section('Strategic Recommendations');
+      d.allRecommendations.forEach((r: string, i: number) => {
+        doc.fontSize(9).fillColor('#1e293b').font('Helvetica').text(`${i + 1}.  ${r}`, M + 5, doc.y, { width: CW - 10 });
+        doc.moveDown(0.5);
+      });
+
+      // Industry Benchmarks
+      section('Industry Benchmarks');
+      kv('Creator Tier', d.creatorTier);
+      kv('Avg. Industry Budget', `₹${d.industryAvgBudget}`);
+      kv('Avg. Industry Reach', d.industryAvgReach);
+      kv('Engagement Rate', d.creatorEngagement);
+      kv('Benchmark Engagement', `${d.benchmarkEngagement}%`);
+      kv('Estimated CPM', `$${d.estimatedCPM}`);
+      kv('Creator Positioning', d.creatorPositioning);
+
+      // ─── Full AI Report (if available) ───────────────────
+      if (d.fullReport) {
+        doc.addPage();
+        section('Detailed AI Analysis Report — Gemini AI');
+        doc.fontSize(9).fillColor('#334155').font('Helvetica').text(d.fullReport, M, doc.y, { width: CW, lineGap: 2 });
+      }
+
+      // ═══════════════════════════════════════════════════════
+      //  FINAL PAGE: METHODOLOGY & DISCLAIMER
+      // ═══════════════════════════════════════════════════════
+      doc.addPage();
+      section('Methodology & Disclaimer');
+      doc.fontSize(9).fillColor('#334155').font('Helvetica-Bold').text('Models Used', M);
+      doc.moveDown(0.3);
+      const modelList = [
+        'India XGBoost Regressor — Trained on 15,000 India creators, 7,000 campaigns, 150,000 interactions (R²=0.86)',
+        'India Neural Network — PyTorch 128→64→32→1 architecture (MSE=0.40)',
+        'sklearn RandomForest — Match scoring (200 trees, depth 15)',
+        'sklearn GradientBoosting — ROI prediction (150 trees)',
+        'Google Gemini Pro — Natural language reports and risk assessment',
+      ];
+      modelList.forEach((m) => {
+        doc.fontSize(8).fillColor('#475569').font('Helvetica').text(`•  ${m}`, M + 10, doc.y, { width: CW - 20 });
+        doc.moveDown(0.3);
+      });
+      doc.moveDown(0.5);
+      doc.fontSize(9).fillColor('#334155').font('Helvetica-Bold').text('Feature Engineering', M);
+      doc.moveDown(0.3);
+      doc.fontSize(8).fillColor('#475569').font('Helvetica').text(
+        '15 features extracted: category match, follower fit, engagement fit, platform match, experience score, rating, categories count, languages count, followers, engagement rate, budget, duration, budget fit, versatility, success rate.',
+        M, doc.y, { width: CW },
+      );
+      doc.moveDown(0.8);
+      doc.fontSize(9).fillColor('#334155').font('Helvetica-Bold').text('Disclaimer', M);
+      doc.moveDown(0.3);
+      doc.fontSize(8).fillColor('#475569').font('Helvetica').text(
+        'This report is generated by AI/ML models and should be used as a decision-support tool. Actual campaign performance may vary based on market conditions, content quality, and audience behavior. Past performance does not guarantee future results.',
+        M, doc.y, { width: CW },
+      );
+
+      // Footer
+      doc.moveDown(3);
+      doc.rect(M, doc.y, CW, 1).fill('#e5e7eb');
+      doc.moveDown(0.5);
+      doc.fontSize(14).fillColor('#6366f1').font('Helvetica-Bold').text('INFLUENCIA', M, doc.y, { align: 'center' });
+      doc.fontSize(9).fillColor('#94a3b8').font('Helvetica').text('AI-Powered Influencer Marketing Platform', M, doc.y, { align: 'center' });
+      doc.fontSize(8).text(`Report generated on ${d.generatedDate}`, M, doc.y, { align: 'center' });
 
       doc.end();
     });

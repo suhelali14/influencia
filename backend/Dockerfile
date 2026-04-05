@@ -23,6 +23,21 @@ FROM node:20-alpine AS production
 
 WORKDIR /app
 
+# Install Chromium for Puppeteer PDF generation
+RUN apk add --no-cache \
+    chromium \
+    nss \
+    freetype \
+    harfbuzz \
+    ca-certificates \
+    ttf-freefont \
+    font-noto \
+    && rm -rf /var/cache/apk/*
+
+# Tell Puppeteer to use installed Chromium instead of downloading its own
+ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
+    PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
+
 # Create non-root user
 RUN addgroup -g 1001 -S nodejs && \
     adduser -S nestjs -u 1001
