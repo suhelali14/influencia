@@ -66,13 +66,16 @@ async function bootstrap() {
   app.use(compression());
 
   // Enable CORS
-  const corsOrigins = configService.get('CORS_ORIGIN')?.split(',') || [
-    'http://localhost:5173',
-    'http://localhost:3000',
-  ];
+  const corsEnv = configService.get('CORS_ORIGIN') || '';
+  // If CORS_ORIGIN is '*', allow all origins; otherwise split comma-separated list
+  const corsOrigin = corsEnv === '*'
+    ? true  // Express CORS: true = reflect request origin (works with credentials)
+    : corsEnv.split(',').filter(Boolean).length > 0
+      ? corsEnv.split(',').map(s => s.trim())
+      : ['http://localhost:5173', 'http://localhost:3000'];
   
   app.enableCors({
-    origin: isProduction ? corsOrigins : true,
+    origin: isProduction ? corsOrigin : true,
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Session-ID', 'X-Requested-With'],
