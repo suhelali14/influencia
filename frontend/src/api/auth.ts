@@ -101,6 +101,36 @@ export const authApi = {
     return data
   },
 
+  requestInvite: async (inviteData: {
+    email: string;
+    company_name: string;
+    first_name?: string;
+    last_name?: string;
+  }) => {
+    const { data } = await api.post('/auth/request-invite', inviteData)
+    return data
+  },
+
+  onboardBrand: async (onboardData: {
+    email: string;
+    company_name: string;
+    first_name: string;
+    last_name: string;
+  }) => {
+    const { data } = await api.post('/auth/onboard-brand', onboardData)
+    return data
+  },
+
+  verifyCreator: async (userId: string, isVerified: boolean) => {
+    const { data } = await api.post(`/auth/verify-creator/${userId}`, { isVerified })
+    return data
+  },
+
+  getInvites: async () => {
+    const { data } = await api.get('/auth/invites')
+    return data
+  },
+
   // Helper to check if user is authenticated
   isAuthenticated: (): boolean => {
     return sessionManager.isAuthenticated()
@@ -111,3 +141,4 @@ export const authApi = {
     return sessionManager.getUser()
   },
 }
+

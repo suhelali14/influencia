@@ -5,13 +5,10 @@ require('dotenv').config();
 
 const connectionString = process.env.DATABASE_URL;
 
-const migrationFiles = [
-  '001_initial_schema.sql',
-  '002_create_collaborations.sql',
-  // '003_create_ai_reports.sql', -- Superseded by 004 which uses UUID keys
-  '004_update_ai_reports_uuid.sql',
-  '005_social_media_api_integration.sql'
-];
+// Read migrations dynamically, excluding the superseded 003 file which has incompatible column types
+const migrationFiles = fs.readdirSync(path.join(__dirname, 'migrations'))
+  .filter(file => file.endsWith('.sql') && file !== '003_create_ai_reports.sql')
+  .sort();
 
 async function runMigrations() {
   const client = new Client({

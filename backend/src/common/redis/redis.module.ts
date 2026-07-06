@@ -62,9 +62,14 @@ function resolveHostFallback(hostname: string): Promise<string> {
               return delay;
             },
           },
-          username,
-          password,
         };
+
+        if (password) {
+          clientConfig.password = password;
+          if (username && username !== 'default') {
+            clientConfig.username = username;
+          }
+        }
         
         if (useTls) {
           clientConfig.socket.tls = true;

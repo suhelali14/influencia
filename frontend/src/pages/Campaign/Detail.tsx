@@ -1,7 +1,7 @@
 import { useEffect } from 'react'
 import DashboardLayout from '../../components/Layout/DashboardLayout'
 import { useParams, useNavigate, Link } from 'react-router-dom'
-import { Calendar, DollarSign, Users, TrendingUp, CheckCircle, ArrowLeft, Edit, MapPin, Target, Package } from 'lucide-react'
+import { Calendar, DollarSign, Users, TrendingUp, CheckCircle, ArrowLeft, Edit, MapPin, Target, Package, Globe } from 'lucide-react'
 import { useAppDispatch, useAppSelector } from '../../store/hooks'
 import { fetchCampaignById } from '../../store/slices/campaignsSlice'
 import toast from 'react-hot-toast'
@@ -97,6 +97,13 @@ export default function CampaignDetail() {
               >
                 <Users className="w-4 h-4 mr-2" />
                 Find Creators
+              </Link>
+              <Link 
+                to={`/brand/campaigns/${campaign.id}/discovery`}
+                className="bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 flex items-center"
+              >
+                <Globe className="w-4 h-4 mr-2" />
+                AI Discovery
               </Link>
               <Link 
                 to={`/brand/campaigns/${campaign.id}/collaborations`}

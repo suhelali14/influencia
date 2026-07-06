@@ -21,4 +21,4 @@ Write-Host "    /api/generate-creator-report" -ForegroundColor Gray
 Write-Host "    /api/match-score" -ForegroundColor Gray
 Write-Host ""
 
-python api_server.py 5002
+python api_server_v2.py 5002

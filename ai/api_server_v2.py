@@ -20,6 +20,10 @@ from typing import Dict, List, Optional, Any
 from functools import wraps
 import time
 import json
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 from flask import Flask, request, jsonify, Response
 from flask_cors import CORS
@@ -55,6 +59,24 @@ try:
     LEGACY_AVAILABLE = True
 except ImportError:
     LEGACY_AVAILABLE = False
+
+# Import Internet Discovery Service
+try:
+    from discovery_service_v2 import get_discovery_service
+    DISCOVERY_AVAILABLE = True
+    logger.info("✅ Internet Discovery Service loaded")
+except ImportError as e:
+    DISCOVERY_AVAILABLE = False
+    logger.warning(f"⚠️  Discovery service not available: {e}")
+
+# Import Local Embedding Service
+try:
+    from embedding_service import get_embedder, EmbeddingService
+    EMBEDDER_AVAILABLE = True
+    logger.info("✅ Embedding Service loaded (all-MiniLM-L6-v2)")
+except ImportError as e:
+    EMBEDDER_AVAILABLE = False
+    logger.warning(f"⚠️  Embedding service not available: {e} (run: pip install sentence-transformers)")
 
 
 # Configuration
@@ -570,6 +592,187 @@ def _classify_tier(followers: int) -> str:
         return 'mega'
 
 
+# ─────────────────────────────────────────────────────────
+# Internet Creator Discovery Endpoints
+# ─────────────────────────────────────────────────────────
+
+@app.route('/api/discover-creators', methods=['POST'])
+def discover_creators():
+    """
+    Discover real creators from the internet for a campaign.
+
+    Request body:
+    {
+        "campaign": { id, title, category, platform, budget, target_audience },
+        "region": "India",
+        "count": 75
+    }
+
+    Sources used (in order):
+      1. YouTube Data API v3  — FREE (requires YOUTUBE_API_KEY)
+      2. Serper.dev SERP API  — ~$0.001/search (requires SERPER_API_KEY)
+      3. Local heuristic scoring — FREE
+      4. Gemini summaries (top 10 only) — optional, requires GEMINI_API_KEY
+    """
+    data = request.get_json()
+    if not data:
+        return jsonify({'success': False, 'error': 'Request body must be JSON'}), 400
+
+    campaign = data.get('campaign', {})
+    region   = data.get('region', 'India')
+    count    = min(int(data.get('count', 75)), 100)  # Hard cap at 100
+
+    # Allow API keys to be passed in body as fallback (for NestJS → Python forwarding)
+    env_overrides = data.get('_env', {})
+    for key, val in env_overrides.items():
+        if val and not os.environ.get(key):
+            os.environ[key] = val
+
+    if not campaign:
+        return jsonify({'success': False, 'error': 'campaign is required'}), 400
+
+    try:
+        if DISCOVERY_AVAILABLE:
+            service = get_discovery_service()
+            creators = service.discover(campaign, region=region, count=count)
+        else:
+            # Minimal fallback using basic templates
+            logger.warning("[Discovery] Service unavailable — returning empty list")
+            creators = []
+
+        logger.info(f"[Discovery] Returning {len(creators)} creators for campaign '{campaign.get('title', '?')}'")
+        return jsonify({
+            'success': True,
+            'creators': creators,
+            'total': len(creators),
+            'sources': {
+                'youtube': bool(os.environ.get('YOUTUBE_API_KEY')),
+                'serper':  bool(os.environ.get('SERPER_API_KEY')),
+                'gemini':  bool(os.environ.get('GEMINI_API_KEY') or os.environ.get('GOOGLE_API_KEY')),
+            }
+        })
+
+    except Exception as e:
+        logger.error(f"[Discovery] discover_creators failed: {e}", exc_info=True)
+        return jsonify({'success': False, 'error': str(e), 'creators': []}), 500
+
+
+@app.route('/api/discover-creators-fallback', methods=['POST'])
+def discover_creators_fallback():
+    """
+    Lightweight fallback discovery — uses seed data when main discovery fails.
+    Called by NestJS when the primary /api/discover-creators times out.
+    """
+    data = request.get_json()
+    if not data:
+        return jsonify({'success': False, 'error': 'Request body must be JSON'}), 400
+
+    campaign = data.get('campaign', {})
+    region   = data.get('region', 'India')
+    count    = min(int(data.get('count', 30)), 50)
+
+    try:
+        if DISCOVERY_AVAILABLE:
+            service = get_discovery_service()
+            # Use seed data directly for fast fallback
+            category = (campaign.get('category') or 'lifestyle').lower()
+            platform = (campaign.get('platform') or 'instagram').lower()
+            creators = service._seed_creators(category, platform, region)
+            creators = service._score_and_rank(creators, campaign, region)
+            for i, c in enumerate(creators):
+                c['rank'] = i + 1
+            creators = creators[:count]
+        else:
+            creators = []
+
+        return jsonify({'success': True, 'creators': creators, 'total': len(creators), 'fallback': True})
+
+    except Exception as e:
+        logger.error(f"[Discovery] fallback failed: {e}")
+        return jsonify({'success': False, 'error': str(e), 'creators': []}), 500
+
+
+# \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+# Embedding Endpoints
+# \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+
+@app.route('/api/embed-text', methods=['POST'])
+def embed_text():
+    """
+    Generate a 384-dim embedding for a single text string.
+    Used by NestJS to embed campaign descriptions for the similarity matrix.
+
+    Request: { "text": "Fitness supplement launch India instagram" }
+    Response: { "embedding": [0.12, -0.34, ...], "dim": 384 }
+    """
+    data = request.get_json()
+    if not data or not data.get('text'):
+        return jsonify({'success': False, 'error': 'text is required'}), 400
+
+    if not EMBEDDER_AVAILABLE:
+        return jsonify({'success': False, 'error': 'Embedding service not available. Install sentence-transformers.'}), 503
+
+    try:
+        embedder = get_embedder()
+        embedding = embedder.embed_text(data['text'])
+        if embedding is None:
+            return jsonify({'success': False, 'error': 'Embedding failed'}), 500
+        return jsonify({'success': True, 'embedding': embedding, 'dim': len(embedding)})
+    except Exception as e:
+        logger.error(f'[Embed] embed_text failed: {e}')
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/embed-creators', methods=['POST'])
+def embed_creators():
+    """
+    Batch-embed a list of creator profiles.
+    Adds 'embedding' and 'bio_text' fields to each creator dict.
+
+    Request: { "creators": [ { name, platform, categories, region, ... }, ... ] }
+    Response: { "creators": [ { ...original, embedding: [...], bio_text: "..." }, ... ] }
+    """
+    data = request.get_json()
+    if not data or not data.get('creators'):
+        return jsonify({'success': False, 'error': 'creators list is required'}), 400
+
+    creators = data['creators']
+
+    if not EMBEDDER_AVAILABLE:
+        # Return creators unchanged — NestJS will store without embeddings
+        logger.warning('[Embed] Embedding service unavailable — returning creators without vectors')
+        return jsonify({'success': True, 'creators': creators, 'embedded': False})
+
+    try:
+        embedder = get_embedder()
+
+        # Build canonical bio texts
+        bio_texts = [EmbeddingService.build_creator_text(c) for c in creators]
+
+        # Batch embed — much faster than one-by-one
+        embeddings = embedder.embed_batch(bio_texts)
+
+        # Attach embedding + bio_text to each creator
+        enriched = []
+        for creator, bio, emb in zip(creators, bio_texts, embeddings):
+            enriched.append({
+                **creator,
+                'bio_text': bio,
+                'embedding': emb,   # None if model failed for this item
+            })
+
+        logger.info(f'[Embed] Batch embedded {len(enriched)} creators')
+        return jsonify({
+            'success': True,
+            'creators': enriched,
+            'embedded': True,
+            'dim': 384,
+        })
+    except Exception as e:
+        logger.error(f'[Embed] embed_creators failed: {e}')
+        return jsonify({'success': False, 'error': str(e), 'creators': creators}), 500
+
+
 # Error handlers
 @app.errorhandler(404)
 def not_found(e):
@@ -590,7 +793,8 @@ def internal_error(e):
 
 
 if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 5001))
+    import sys
+    port = int(sys.argv[1]) if len(sys.argv) > 1 else int(os.environ.get('PORT', 5002))
     debug = os.environ.get('DEBUG', 'false').lower() == 'true'
     
     logger.info(f"🚀 Starting AI API Server on port {port}")

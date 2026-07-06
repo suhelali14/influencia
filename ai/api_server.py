@@ -7,20 +7,86 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 import logging
 from ai_service import AIPredictionService
+from discovery_service import DiscoveryService
 import traceback
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
+import time
+from flask import g
+
+# Configure logging with custom Request-ID filter
+class RequestIdFilter(logging.Filter):
+    def filter(self, record):
+        try:
+            record.request_id = getattr(g, 'request_id', 'system')
+        except Exception:
+            record.request_id = 'system'
+        return True
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] [Req-ID: %(request_id)s] %(name)s: %(message)s'
+)
 logger = logging.getLogger(__name__)
+
+# Register request-id filter on active loggers
+req_id_filter = RequestIdFilter()
+logger.addFilter(req_id_filter)
+logging.getLogger('flask').addFilter(req_id_filter)
+logging.getLogger('werkzeug').addFilter(req_id_filter)
 
 app = Flask(__name__)
 CORS(app)  # Enable CORS for Node.js backend
+
+# Request tracing hooks
+@app.before_request
+def start_timer():
+    req_id = request.headers.get('X-Request-ID', 'system')
+    g.request_id = req_id
+    g.start_time = time.time()
+    
+    redacted_json = None
+    if request.is_json:
+        try:
+            redacted_json = dict(request.json)
+            # Redact common sensitive parameters
+            if 'password' in redacted_json:
+                redacted_json['password'] = '***'
+        except Exception:
+            pass
+            
+    logger.info(f"➡️ Incoming Request: {request.method} {request.path} | IP: {request.remote_addr} | Body: {redacted_json}")
+
+@app.after_request
+def log_response(response):
+    if hasattr(g, 'start_time'):
+        duration = (time.time() - g.start_time) * 1000
+        logger.info(f"⬅️ Outgoing Response: {request.method} {request.path} | Status: {response.status_code} | Duration: {duration:.2f}ms")
+    return response
+
+@app.errorhandler(Exception)
+def handle_exception(e):
+    req_id = getattr(g, 'request_id', 'system')
+    tb = traceback.format_exc()
+    logger.error(f"💥 Flask Exception: {str(e)}\n{tb}")
+    return jsonify({
+        'statusCode': 500,
+        'message': str(e),
+        'error': 'InternalServerError',
+        'requestId': req_id
+    }), 500
 
 # Initialize AI service (loads models once on startup)
 logger.info("🚀 Initializing AI Service...")
 ai_service = AIPredictionService()
 logger.info("✅ AI Service initialized successfully")
 
+# Initialize Discovery service
+try:
+    discovery_service = DiscoveryService()
+    logger.info("✅ Discovery Service initialized")
+except Exception as e:
+    discovery_service = None
+    logger.warning(f"⚠️ Discovery Service unavailable: {e}")
 
 @app.route('/health', methods=['GET'])
 def health_check():
@@ -239,6 +305,56 @@ def train_models():
         logger.error(f"❌ Error training models: {str(e)}")
         return jsonify({
             'error': str(e)
+        }), 500
+
+
+@app.route('/api/discover-creators', methods=['POST'])
+def discover_creators():
+    """
+    Discover top creators from the internet using AI web research.
+
+    Request body:
+    {
+        "campaign": { "title": ..., "category": ..., "platform": ..., "budget": ..., "target_audience": {} },
+        "region": "India",  // optional
+        "count": 100        // optional
+    }
+    """
+    try:
+        data = request.get_json()
+
+        if not data or 'campaign' not in data:
+            return jsonify({'error': 'Missing campaign data'}), 400
+
+        if discovery_service is None:
+            return jsonify({'error': 'Discovery service not available', 'creators': []}), 503
+
+        campaign = data['campaign']
+        region = data.get('region')
+        count = data.get('count', 100)
+
+        logger.info(f"🌐 Discovering creators for campaign '{campaign.get('title')}' in {region or 'auto'}")
+
+        creators = discovery_service.discover_creators(
+            campaign=campaign,
+            region=region,
+            count=count,
+        )
+
+        logger.info(f"✅ Discovered {len(creators)} creators")
+
+        return jsonify({
+            'creators': creators,
+            'total': len(creators),
+            'campaign_id': campaign.get('id'),
+        })
+
+    except Exception as e:
+        logger.error(f"❌ Error in discover-creators: {str(e)}")
+        logger.error(traceback.format_exc())
+        return jsonify({
+            'error': str(e),
+            'creators': [],
         }), 500
 
 

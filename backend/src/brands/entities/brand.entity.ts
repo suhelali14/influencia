@@ -46,6 +46,28 @@ export class Brand {
   @Column({ default: false })
   is_verified: boolean;
 
+  // ── Subscriptions & Limits (SaaS Monetization) ────────────────────
+  @Column({ default: 'free', length: 50 })
+  subscription_tier: string; // 'free' | 'starter' | 'growth' | 'pro' | 'enterprise'
+
+  @Column({ default: 'active', length: 50 })
+  subscription_status: string; // 'active' | 'inactive' | 'past_due' | 'trial'
+
+  @Column({ type: 'timestamp', nullable: true })
+  subscription_expires_at: Date | null;
+
+  @Column({ type: 'varchar', nullable: true, length: 255 })
+  razorpay_customer_id: string | null;
+
+  @Column({ type: 'varchar', nullable: true, length: 255 })
+  razorpay_subscription_id: string | null;
+
+  @Column({ type: 'int', default: 0 })
+  ai_discovery_limit_used: number;
+
+  @Column({ type: 'int', default: 0 })
+  campaign_limit_used: number;
+
   @CreateDateColumn()
   created_at: Date;
 

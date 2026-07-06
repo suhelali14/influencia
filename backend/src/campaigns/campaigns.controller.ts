@@ -4,6 +4,7 @@ import { CampaignsService } from './campaigns.service';
 import { CreateCampaignDto } from './dto/create-campaign.dto';
 import { UpdateCampaignDto } from './dto/update-campaign.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { PlanLimitsGuard } from '../common/guards/plan-limits.guard';
 import { BrandsService } from '../brands/brands.service';
 import { PaginationDto } from '../common/dto/pagination.dto';
 
@@ -16,7 +17,7 @@ export class CampaignsController {
   ) {}
 
   @Post()
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, PlanLimitsGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Create a new campaign' })
   async create(@Request() req, @Body() createCampaignDto: CreateCampaignDto) {

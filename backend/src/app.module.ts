@@ -15,6 +15,8 @@ import { PaymentsModule } from './payments/payments.module';
 import { CommonModule } from './common/common.module';
 import { AiModule } from './ai/ai.module';
 import { AnalyticsModule } from './analytics/analytics.module';
+import { DiscoveryModule } from './discovery/discovery.module';
+import { BillingModule } from './billing/billing.module';
 
 // Custom DNS resolver for environments where system DNS fails (corporate/school networks)
 const customResolver = new dns.Resolver();
@@ -87,14 +89,25 @@ function resolveHostWithFallback(hostname: string): Promise<string> {
       imports: [ConfigModule],
       useFactory: async (configService: ConfigService) => {
         const redisHost = configService.get('REDIS_HOST', 'localhost');
+        const redisPort = Number(configService.get('REDIS_PORT', 6379));
+        const redisPassword = configService.get('REDIS_PASSWORD');
+        const redisUsername = configService.get('REDIS_USERNAME', 'default');
+        
         const resolvedRedisHost = await resolveHostWithFallback(redisHost);
+        const redisConfig: any = {
+          host: resolvedRedisHost,
+          port: redisPort,
+        };
+
+        if (redisPassword) {
+          redisConfig.password = redisPassword;
+          if (redisUsername && redisUsername !== 'default') {
+            redisConfig.username = redisUsername;
+          }
+        }
+
         return {
-          redis: {
-            host: resolvedRedisHost,
-            port: Number(configService.get('REDIS_PORT', 6379)),
-            password: configService.get('REDIS_PASSWORD'),
-            username: configService.get('REDIS_USERNAME', 'default'),
-          },
+          redis: redisConfig,
         };
       },
       inject: [ConfigService],
@@ -109,6 +122,8 @@ function resolveHostWithFallback(hostname: string): Promise<string> {
     PaymentsModule,
     AiModule,
     AnalyticsModule,
+    DiscoveryModule,
+    BillingModule,
   ],
   controllers: [AppController],
   providers: [AppService],

@@ -1,5 +1,6 @@
 import axios from 'axios'
 import { sessionManager } from '../lib/sessionManager'
+import { logger } from '../lib/logger'
 
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_URL || '/v1',
@@ -8,49 +9,67 @@ const api = axios.create({
   },
 })
 
-// Add auth token and session ID to requests
+// Add auth token, session ID, and request ID to requests
 api.interceptors.request.use((config) => {
-  console.log('🔵 Axios Interceptor: Request')
-  console.log('📍 URL:', config.url)
-  console.log('🔧 Method:', config.method)
+  // Generate correlation Request ID for distributed logging
+  const requestId = typeof crypto !== 'undefined' && crypto.randomUUID 
+    ? crypto.randomUUID() 
+    : Math.random().toString(36).substring(2, 15);
+    
+  config.headers['X-Request-ID'] = requestId;
+
+  logger.info(`📡 API REQUEST [Req-ID: ${requestId}]`, {
+    url: config.url,
+    method: config.method?.toUpperCase(),
+    params: config.params,
+    data: config.data ? { ...config.data, password: '***', confirmPassword: '***' } : undefined,
+  });
   
   // Add session ID (preferred for session-based auth)
   const sessionId = sessionManager.getSessionId()
   if (sessionId) {
     config.headers['X-Session-ID'] = sessionId
-    console.log('🔑 Session ID added to request')
   }
 
   // Also add JWT token for backward compatibility
   const token = sessionManager.getToken()
   if (token) {
     config.headers.Authorization = `Bearer ${token}`
-    console.log('🔑 Token added to request')
-  }
-  
-  if (!sessionId && !token) {
-    console.log('⚠️ No authentication credentials found')
   }
 
   return config
 })
 
-// Handle 401 errors
+// Handle responses and trace performance/errors
 api.interceptors.response.use(
   (response) => {
-    console.log('✅ Axios Interceptor: Response Success')
-    console.log('📍 URL:', response.config.url)
-    console.log('📊 Status:', response.status)
+    const requestId = response.config.headers['X-Request-ID'] || 'unknown';
+    
+    logger.success(`✅ API RESPONSE SUCCESS [Req-ID: ${requestId}]`, {
+      url: response.config.url,
+      method: response.config.method?.toUpperCase(),
+      status: response.status,
+      data: response.data,
+    });
+    
     return response
   },
   (error) => {
-    console.error('❌ Axios Interceptor: Response Error')
-    console.error('📍 URL:', error.config?.url)
-    console.error('📊 Status:', error.response?.status)
-    console.error('📦 Error data:', error.response?.data)
+    const config = error.config || {};
+    const requestId = config.headers ? config.headers['X-Request-ID'] : 'unknown';
+    const status = error.response ? error.response.status : 'network_error';
+    const responseData = error.response ? error.response.data : null;
+
+    logger.error(`❌ API RESPONSE FAILURE [Req-ID: ${requestId}]`, {
+      url: config.url,
+      method: config.method?.toUpperCase(),
+      status: status,
+      error: error.message,
+      data: responseData,
+    });
     
     if (error.response?.status === 401) {
-      console.log('🔴 401 Unauthorized - Clearing auth and redirecting to login')
+      logger.warn('🔴 401 Unauthorized - Clearing auth and redirecting to login');
       sessionManager.clearAuth()
       
       // Only redirect if not already on login page

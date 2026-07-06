@@ -21,9 +21,13 @@ import DiscoverCreators from './pages/Brand/DiscoverCreators'
 import BrandAnalytics from './pages/Brand/Analytics'
 import CreatorMatching from './pages/Brand/CreatorMatching'
 import CreatorAnalysis from './pages/Brand/CreatorAnalysis'
+import CreatorDiscovery from './pages/Brand/CreatorDiscovery'
+import DiscoveredCreatorDetail from './pages/Brand/DiscoveredCreatorDetail'
 import Collaborations from './pages/Brand/Collaborations'
 import CampaignDetail from './pages/Campaign/Detail'
+import BillingSettings from './pages/Brand/BillingSettings'
 import NotFound from './pages/NotFound'
+
 
 function App() {
   const { isAuthenticated, user } = useAppSelector((state) => state.auth)
@@ -181,6 +185,22 @@ function App() {
         }
       />
       <Route
+        path="/brand/campaigns/:campaignId/discovery"
+        element={
+          <ProtectedRoute role="brand_admin">
+            <CreatorDiscovery />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/brand/campaigns/:campaignId/discovery/:discoveredId"
+        element={
+          <ProtectedRoute role="brand_admin">
+            <DiscoveredCreatorDetail />
+          </ProtectedRoute>
+        }
+      />
+      <Route
         path="/brand/discover"
         element={
           <ProtectedRoute role="brand_admin">
@@ -193,6 +213,14 @@ function App() {
         element={
           <ProtectedRoute role="brand_admin">
             <BrandAnalytics />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/brand/billing"
+        element={
+          <ProtectedRoute role="brand_admin">
+            <BillingSettings />
           </ProtectedRoute>
         }
       />

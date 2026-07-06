@@ -100,4 +100,36 @@ export class AuthController {
   async getProfile(@Request() req) {
     return this.authService.getProfile(req.user.userId);
   }
+
+  @Post('request-invite')
+  @ApiOperation({ summary: 'Request onboarding invite for Brands and Agencies' })
+  async requestInvite(
+    @Body() body: { email: string; company_name: string; first_name?: string; last_name?: string }
+  ) {
+    return this.authService.requestBrandInvite(body);
+  }
+
+  @Post('onboard-brand')
+  @ApiOperation({ summary: 'Directly onboard a Brand and simulate welcome email' })
+  async onboardBrand(
+    @Body() body: { email: string; company_name: string; first_name: string; last_name: string }
+  ) {
+    return this.authService.onboardBrand(body);
+  }
+
+  @Post('verify-creator/:id')
+  @ApiOperation({ summary: 'Verify or unverify a creator account' })
+  async verifyCreator(
+    @Param('id') id: string,
+    @Body() body: { isVerified: boolean }
+  ) {
+    return this.authService.verifyUser(id, body.isVerified);
+  }
+
+  @Get('invites')
+  @ApiOperation({ summary: 'Get list of all Brand invites' })
+  async getInvites() {
+    return this.authService.getInvites();
+  }
 }
+

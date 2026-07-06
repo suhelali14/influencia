@@ -66,9 +66,29 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       error = 'UnknownError';
     }
 
-    // Log error
+    // Add request ID if available
+    const requestId = request.headers['x-request-id'] as string;
+
+    // Securely redact sensitive fields from request body for logging
+    const redactedBody = { ...request.body };
+    if (redactedBody.password) redactedBody.password = '***';
+    if (redactedBody.confirmPassword) redactedBody.confirmPassword = '***';
+
+    // Detailed error logging
+    const logDetails = {
+      requestId: requestId || 'N/A',
+      ip: request.ip || request.headers['x-forwarded-for'],
+      userAgent: request.headers['user-agent'] || 'Unknown',
+      body: redactedBody,
+      headers: {
+        authorization: request.headers['authorization'] ? 'Present (JWT)' : 'None',
+        'x-session-id': request.headers['x-session-id'] || 'None',
+      }
+    };
+
     this.logger.error(
-      `${request.method} ${request.url} - ${status} - ${message}`,
+      `💥 Error [${requestId || 'N/A'}] ${request.method} ${request.url} - Status ${status} - ${message}\n` +
+      `📦 Details: ${JSON.stringify(logDetails, null, 2)}`,
       exception instanceof Error ? exception.stack : undefined,
     );
 
@@ -81,8 +101,6 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       method: request.method,
     };
 
-    // Add request ID if available
-    const requestId = request.headers['x-request-id'] as string;
     if (requestId) {
       errorResponse.requestId = requestId;
     }

@@ -1,9 +1,11 @@
-import { Injectable, UnauthorizedException, ConflictException, Inject, forwardRef, Logger } from '@nestjs/common';
+import { Injectable, UnauthorizedException, ConflictException, Inject, forwardRef, Logger, BadRequestException, NotFoundException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import * as bcrypt from 'bcrypt';
 import { User } from './entities/user.entity';
+import { BrandInvite } from './entities/brand-invite.entity';
+import { v4 as uuidv4 } from 'uuid';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { CreatorsService } from '../creators/creators.service';
@@ -23,6 +25,8 @@ export class AuthService {
   constructor(
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
+    @InjectRepository(BrandInvite)
+    private readonly brandInviteRepository: Repository<BrandInvite>,
     private readonly jwtService: JwtService,
     @Inject(forwardRef(() => CreatorsService))
     private readonly creatorsService: CreatorsService,
@@ -35,6 +39,12 @@ export class AuthService {
     registerDto: RegisterDto,
     requestInfo?: { userAgent?: string; ipAddress?: string },
   ): Promise<AuthResponse> {
+    if (registerDto.role !== 'creator') {
+      throw new BadRequestException(
+        'Self-registration is only allowed for Creators. Brands and Agencies must be invited by an administrator or request access.'
+      );
+    }
+
     const existingUser = await this.userRepository.findOne({
       where: { email: registerDto.email },
     });
@@ -49,6 +59,7 @@ export class AuthService {
       ...registerDto,
       password_hash,
       status: 'active',
+      is_verified: false,
     });
 
     await this.userRepository.save(user);
@@ -198,4 +209,133 @@ export class AuthService {
 
     return userWithoutPassword as User;
   }
+
+  async requestBrandInvite(data: {
+    email: string;
+    company_name: string;
+    first_name?: string;
+    last_name?: string;
+  }): Promise<BrandInvite> {
+    const existingInvite = await this.brandInviteRepository.findOne({
+      where: { email: data.email },
+    });
+
+    if (existingInvite) {
+      throw new ConflictException('An invite request for this email already exists.');
+    }
+
+    const invite = this.brandInviteRepository.create({
+      ...data,
+      token: uuidv4(),
+      status: 'pending',
+      expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
+    });
+
+    return this.brandInviteRepository.save(invite);
+  }
+
+  async onboardBrand(data: {
+    email: string;
+    company_name: string;
+    first_name: string;
+    last_name: string;
+  }): Promise<{ user: User; tempPassword: string }> {
+    const existingUser = await this.userRepository.findOne({
+      where: { email: data.email },
+    });
+
+    if (existingUser) {
+      throw new ConflictException('A user with this email already exists.');
+    }
+
+    const tempPassword = 'InfluenciaBrand2026!';
+    const password_hash = await bcrypt.hash(tempPassword, 10);
+
+    const user = this.userRepository.create({
+      email: data.email,
+      first_name: data.first_name,
+      last_name: data.last_name,
+      password_hash,
+      role: 'brand_admin',
+      status: 'active',
+      is_verified: true,
+      email_verified: true,
+    });
+
+    const savedUser = await this.userRepository.save(user);
+
+    // Create Brand profile
+    try {
+      await this.brandsService.create(savedUser.id, {
+        company_name: data.company_name,
+        industry: 'General',
+        description: 'Onboarded Brand Partner',
+        website: '',
+      });
+    } catch (error) {
+      this.logger.error('Failed to create onboarded brand profile:', error);
+    }
+
+    // Update invite status if there was one
+    try {
+      const invite = await this.brandInviteRepository.findOne({
+        where: { email: data.email },
+      });
+      if (invite) {
+        invite.status = 'accepted';
+        await this.brandInviteRepository.save(invite);
+      }
+    } catch (error) {
+      this.logger.warn('Failed to update brand invite status:', error);
+    }
+
+    // Premium simulated email logs
+    this.logger.log(`
+============================================================
+📧 SIMULATED ONBOARDING EMAIL SENT
+============================================================
+To: ${data.email}
+Subject: Welcome to Influencia - Brand Account Setup
+
+Hi ${data.first_name},
+Your brand account for "${data.company_name}" has been successfully onboarded and verified by our admin team!
+
+You can now log in to the platform:
+URL: http://localhost:5173/login
+Email: ${data.email}
+Temporary Password: ${tempPassword}
+
+Please change your password immediately after logging in.
+============================================================
+    `);
+
+    const { password_hash: _, ...userWithoutPassword } = savedUser;
+    return {
+      user: userWithoutPassword as User,
+      tempPassword,
+    };
+  }
+
+  async verifyUser(userId: string, isVerified: boolean): Promise<User> {
+    const user = await this.userRepository.findOne({
+      where: { id: userId },
+    });
+
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    user.is_verified = isVerified;
+    const savedUser = await this.userRepository.save(user);
+
+    const { password_hash: _, ...userWithoutPassword } = savedUser;
+    return userWithoutPassword as User;
+  }
+
+  async getInvites(): Promise<BrandInvite[]> {
+    return this.brandInviteRepository.find({
+      order: { created_at: 'DESC' },
+    });
+  }
 }
+

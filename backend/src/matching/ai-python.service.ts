@@ -66,23 +66,24 @@ export class AIPythonService {
   /**
    * Call Python AI microservice via HTTP
    */
-  private async callAIService(endpoint: string, data: any): Promise<any> {
+  private async callAIService(endpoint: string, data: any, requestId?: string): Promise<any> {
     try {
-      this.logger.log(`📡 Calling AI service: ${endpoint}`);
+      this.logger.log(`📡 Calling AI service [${requestId || 'system'}]: ${endpoint}`);
       
       const response = await axios.post(`${this.aiServiceUrl}${endpoint}`, data, {
         timeout: this.timeout,
         headers: {
           'Content-Type': 'application/json',
+          ...(requestId ? { 'X-Request-ID': requestId } : {}),
         },
       });
       
-      this.logger.log(`✅ AI service response received`);
+      this.logger.log(`✅ AI service response received [${requestId || 'system'}]`);
       return response.data;
       
     } catch (error) {
       if (axios.isAxiosError(error)) {
-        this.logger.error(`❌ AI service error: ${error.message}`);
+        this.logger.error(`❌ AI service error [${requestId || 'system'}]: ${error.message}`);
         if (error.response) {
           this.logger.error(`Response data: ${JSON.stringify(error.response.data)}`);
         }
@@ -94,12 +95,12 @@ export class AIPythonService {
   /**
    * Get comprehensive AI analysis for creator-campaign match
    */
-  async getAnalysis(creator: any, campaign: any): Promise<AIAnalysisResult> {
+  async getAnalysis(creator: any, campaign: any, requestId?: string): Promise<AIAnalysisResult> {
     try {
       const result = await this.callAIService('/api/analyze', {
         creator: this.prepareCreatorData(creator),
         campaign: this.prepareCampaignData(campaign),
-      });
+      }, requestId);
       
       return result as AIAnalysisResult;
     } catch (error) {
@@ -112,13 +113,13 @@ export class AIPythonService {
   /**
    * Generate comprehensive AI report with Gemini
    */
-  async generateReport(creator: any, campaign: any, analysis?: AIAnalysisResult): Promise<AIReportResult> {
+  async generateReport(creator: any, campaign: any, analysis?: AIAnalysisResult, requestId?: string): Promise<AIReportResult> {
     try {
       const result = await this.callAIService('/api/generate-report', {
         creator: this.prepareCreatorData(creator),
         campaign: this.prepareCampaignData(campaign),
         analysis,
-      });
+      }, requestId);
       
       return result as AIReportResult;
     } catch (error) {
@@ -131,12 +132,12 @@ export class AIPythonService {
   /**
    * Calculate match score using AI
    */
-  async calculateMatchScore(creator: any, campaign: any): Promise<number> {
+  async calculateMatchScore(creator: any, campaign: any, requestId?: string): Promise<number> {
     try {
       const result = await this.callAIService('/api/match-score', {
         creator: this.prepareCreatorData(creator),
         campaign: this.prepareCampaignData(campaign),
-      });
+      }, requestId);
       
       return result.match_score;
     } catch (error) {
