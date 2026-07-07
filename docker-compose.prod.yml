@@ -14,6 +14,10 @@ services:
         VITE_AI_API_URL: ${VITE_AI_API_URL:-http://localhost:5001}
     container_name: influencia_frontend
     restart: unless-stopped
+    environment:
+      PORT: 80
+      # In Docker Compose, the backend is reachable via its service name
+      BACKEND_PROXY_URL: http://backend:3000
     ports:
       - "80:80"
     networks:

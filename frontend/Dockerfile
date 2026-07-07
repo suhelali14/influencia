@@ -37,9 +37,11 @@ COPY --from=builder /app/dist /usr/share/nginx/html
 
 # Default port (platforms like Render inject PORT env var)
 ENV PORT=80
+# Default backend proxy URL — override at runtime for production
+ENV BACKEND_PROXY_URL=http://localhost:3000
 
 # Expose port
 EXPOSE 80
 
-# Start nginx — use envsubst to inject PORT, then start
-CMD ["/bin/sh", "-c", "envsubst '${PORT}' < /etc/nginx/templates/default.conf.template > /etc/nginx/conf.d/default.conf && nginx -g 'daemon off;'"]
+# Start nginx — use envsubst to inject PORT and BACKEND_PROXY_URL, then start
+CMD ["/bin/sh", "-c", "envsubst '${PORT} ${BACKEND_PROXY_URL}' < /etc/nginx/templates/default.conf.template > /etc/nginx/conf.d/default.conf && nginx -g 'daemon off;'"]

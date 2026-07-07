@@ -44,17 +44,17 @@ services:
         generateValue: true
       - key: JWT_EXPIRATION
         value: "7d"
-      # Redis Cloud
+      # Redis Cloud — set credentials in Render Dashboard, NOT here!
       - key: REDIS_HOST
-        value: "redis-12525.c74.us-east-1-4.ec2.cloud.redislabs.com"
+        sync: false
       - key: REDIS_PORT
-        value: "12525"
+        sync: false
       - key: REDIS_PASSWORD
-        value: "WNw2ECiGTMY2u64cEnx16X4FkflW4QVn"
+        sync: false
       - key: REDIS_USERNAME
-        value: "default"
+        sync: false
       - key: REDIS_TLS
-        value: "false"
+        value: "true"
       # AI Service URL (set after AI deploys)
       - key: AI_SERVICE_URL
         sync: false
@@ -94,6 +94,10 @@ services:
       - key: VITE_API_URL
         sync: false
       - key: VITE_AI_API_URL
+        sync: false
+      # Runtime: Nginx uses this to proxy /v1 → backend
+      # Set to your backend's Render URL: https://influencia-backend.onrender.com
+      - key: BACKEND_PROXY_URL
         sync: false
 
   # ─────────────────────────────────────────────
