@@ -78,8 +78,16 @@ async function bootstrap() {
     origin: isProduction ? corsOrigin : true,
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Session-ID', 'X-Requested-With'],
-    exposedHeaders: ['X-Session-ID'],
+    allowedHeaders: [
+      'Content-Type',
+      'Authorization',
+      'X-Session-ID',
+      'X-Requested-With',
+      'X-Request-ID',
+      'Accept',
+      'Origin',
+    ],
+    exposedHeaders: ['X-Session-ID', 'X-Request-ID'],
   });
 
   // Global validation pipe with production settings

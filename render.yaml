@@ -65,12 +65,12 @@ services:
         value: "604800"
       - key: MAX_SESSIONS_PER_USER
         value: "5"
-      # CORS
+      # CORS — must match exact frontend origin (wildcard + credentials is blocked by browsers)
       - key: CORS_ORIGIN
-        value: "*"
+        value: "https://influencia-frontend.onrender.com"
       # Frontend URL (set after frontend deploys)
       - key: FRONTEND_URL
-        sync: false
+        value: "https://influencia-frontend.onrender.com"
 
   # ─────────────────────────────────────────────
   # 2. Frontend — React + Vite + Nginx
