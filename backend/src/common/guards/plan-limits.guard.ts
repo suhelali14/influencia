@@ -96,7 +96,7 @@ export class PlanLimitsGuard implements CanActivate {
       }
     }
 
-    // ── Enforce Premium Features (PDF / Analytics / Compare) ──────────
+    // ── Enforce Premium Features (PDF / Analytics / Compare / Budget) ──
     if ((path.includes('/compare') || path.includes('/download-report')) && method === 'GET') {
       const allowedTiers = ['growth', 'pro', 'enterprise'];
       if (!allowedTiers.includes(tier)) {
@@ -105,6 +105,20 @@ export class PlanLimitsGuard implements CanActivate {
           {
             statusCode: HttpStatus.PAYMENT_REQUIRED,
             message: `${featureName} features are only available on the Growth plan or higher.`,
+            error: 'FeatureNotAllowed',
+          },
+          HttpStatus.PAYMENT_REQUIRED,
+        );
+      }
+    }
+
+    if (path.includes('/budget-recommendation') || path.includes('/budget-recalculate')) {
+      const allowedTiers = ['growth', 'pro', 'enterprise'];
+      if (!allowedTiers.includes(tier)) {
+        throw new HttpException(
+          {
+            statusCode: HttpStatus.PAYMENT_REQUIRED,
+            message: `AI Budget recommendation and ROI sandbox are only available on the Growth plan or higher.`,
             error: 'FeatureNotAllowed',
           },
           HttpStatus.PAYMENT_REQUIRED,

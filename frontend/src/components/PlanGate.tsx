@@ -50,6 +50,11 @@ const FEATURE_DESCRIPTIONS: Record<PlanFeature, { title: string; description: st
     description: 'Get dedicated onboarding support and a guaranteed 4-hour response SLA.',
     emoji: '🎯',
   },
+  budgetOptimization: {
+    title: 'AI Budget & ROI Sandbox',
+    description: 'Simulate creator combinations, optimize budget allocation with AI, and predict campaign ROI in real time.',
+    emoji: '💰',
+  },
 }
 
 /**

@@ -519,6 +519,10 @@ class InternetDiscoveryService:
             elif "india" in creator_region:
                 score += 3
 
+            # ── 6. Size/Budget Mismatch Penalty ──────────────
+            if followers > target_max * 3:
+                score -= 35.0
+
             creator["match_score"] = round(min(100.0, max(0.0, score)), 1)
 
         # Sort by match_score descending

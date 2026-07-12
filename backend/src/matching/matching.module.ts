@@ -9,11 +9,23 @@ import { Campaign } from '../campaigns/entities/campaign.entity';
 import { Collaboration } from '../campaigns/entities/collaboration.entity';
 import { AIAnalysisReport } from './entities/ai-analysis-report.entity';
 import { SocialAccount } from '../social/entities/social-account.entity';
+import { BudgetPlan } from './entities/budget-plan.entity';
+import { BudgetPlanAllocation } from './entities/budget-plan-allocation.entity';
+import { DiscoveredCreator } from '../discovery/discovered-creator.entity';
 import { AiModule } from '../ai/ai.module';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Creator, Campaign, Collaboration, AIAnalysisReport, SocialAccount]),
+    TypeOrmModule.forFeature([
+      Creator,
+      Campaign,
+      Collaboration,
+      AIAnalysisReport,
+      SocialAccount,
+      BudgetPlan,
+      BudgetPlanAllocation,
+      DiscoveredCreator,
+    ]),
     AiModule,
   ],
   controllers: [MatchingController],

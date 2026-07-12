@@ -6,6 +6,7 @@ import { matchingApi, type CreatorMatch } from '../../api/matching'
 import { campaignsApi } from '../../api/campaigns'
 import { usePlan } from '../../hooks/usePlan'
 import PlanGate from '../../components/PlanGate'
+import BudgetSandbox from './BudgetSandbox'
 import toast from 'react-hot-toast'
 import {
   Search, Globe, Users, TrendingUp, Star, ExternalLink, ChevronLeft, ChevronRight,
@@ -15,7 +16,7 @@ import {
 
 import { useDiscoveryJob } from '../../hooks/useDiscoveryJob'
 
-type Tab = 'platform' | 'discovery' | 'compare'
+type Tab = 'platform' | 'discovery' | 'compare' | 'budget'
 
 // Source badge config
 const SOURCE_CONFIG = {
@@ -193,6 +194,8 @@ export default function CreatorDiscovery() {
             desc: 'Creators registered on Influencia' },
           { key: 'compare' as Tab, label: 'Compare', icon: BarChart3,
             desc: 'Side-by-side comparison' },
+          { key: 'budget' as Tab, label: 'AI Budget Sandbox', icon: Sparkles,
+            desc: 'AI-powered budget allocation & ROI simulator' },
         ]).map(t => (
           <button
             key={t.key}
@@ -671,6 +674,11 @@ export default function CreatorDiscovery() {
             )}
           </div>
         )
+      )}
+
+      {/* ── AI BUDGET SANDBOX TAB ───────────────────────────────────────── */}
+      {tab === 'budget' && (
+        <BudgetSandbox campaignId={campaignId!} campaign={campaign} />
       )}
     </DashboardLayout>
   )

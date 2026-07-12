@@ -376,6 +376,24 @@ class LightweightEnsemble:
             0.15 * experience_score +
             0.15 * quality_score
         )
+
+        # Strict budget / followers mismatch penalty (max -0.35 points)
+        followers = float(creator.get('followers', 0))
+        budget = float(campaign.get('budget', 0))
+
+        if budget > 500000:
+            target_max = 100000000
+        elif budget > 100000:
+            target_max = 1000000
+        elif budget > 20000:
+            target_max = 500000
+        elif budget > 5000:
+            target_max = 50000
+        else:
+            target_max = 10000
+
+        if followers > target_max * 3:
+            final_score = max(0.0, final_score - 0.35)
         
         return {
             'match_score': final_score,

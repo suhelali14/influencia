@@ -7,7 +7,11 @@ const migrationFiles = [
   '001_initial_schema.sql',
   '002_create_collaborations.sql',
   '003_create_ai_reports.sql',
-  '004_update_ai_reports_uuid.sql'
+  '004_update_ai_reports_uuid.sql',
+  '005_social_media_api_integration.sql',
+  '006_creator_index_pgvector.sql',
+  '007_brand_subscriptions.sql',
+  '008_performance_indexes.sql'
 ];
 
 async function markMigrationsAsExecuted() {

@@ -6,6 +6,9 @@ import { Campaign, CampaignStatus } from '../campaigns/entities/campaign.entity'
 import { Collaboration, CollaborationStatus } from '../campaigns/entities/collaboration.entity';
 import { AIAnalysisReport } from './entities/ai-analysis-report.entity';
 import { SocialAccount } from '../social/entities/social-account.entity';
+import { BudgetPlan } from './entities/budget-plan.entity';
+import { BudgetPlanAllocation } from './entities/budget-plan-allocation.entity';
+import { DiscoveredCreator } from '../discovery/discovered-creator.entity';
 import { AIPythonService } from './ai-python.service';
 import { AiMatchingService } from '../ai/ai-matching.service';
 import { PaginationDto, PaginatedResponse } from '../common/dto/pagination.dto';
@@ -52,6 +55,12 @@ export class MatchingService {
     private aiReportsRepository: Repository<AIAnalysisReport>,
     @InjectRepository(SocialAccount)
     private socialAccountsRepository: Repository<SocialAccount>,
+    @InjectRepository(BudgetPlan)
+    private budgetPlansRepository: Repository<BudgetPlan>,
+    @InjectRepository(BudgetPlanAllocation)
+    private budgetPlanAllocationsRepository: Repository<BudgetPlanAllocation>,
+    @InjectRepository(DiscoveredCreator)
+    private discoveredCreatorsRepository: Repository<DiscoveredCreator>,
     private aiPythonService: AIPythonService,
     private aiMatchingService: AiMatchingService,
   ) {}
@@ -89,9 +98,25 @@ export class MatchingService {
       relations: ['user'],
     });
 
+    // Fetch all connected social accounts
+    const socialAccounts = await this.socialAccountsRepository.find({
+      where: { is_connected: true },
+    });
+
+    // Group social accounts by creator_id
+    const socialMap = new Map<string, SocialAccount[]>();
+    for (const sa of socialAccounts) {
+      let list = socialMap.get(sa.creator_id);
+      if (!list) {
+        list = [];
+        socialMap.set(sa.creator_id, list);
+      }
+      list.push(sa);
+    }
+
     // STEP 1: Fast rule-based scoring for ALL creators (no external calls)
     const ruleBasedMatches: CreatorMatch[] = creators.map((creator) => {
-      const analysis = this.analyzeMatch(creator, campaign);
+      const analysis = this.analyzeMatch(creator, campaign!, socialMap);
       return {
         creator,
         matchScore: analysis.score,
@@ -157,7 +182,7 @@ export class MatchingService {
     return new PaginatedResponse(slice, allMatches.length, page, pageSize);
   }
 
-  private analyzeMatch(creator: Creator, campaign: Campaign): MatchAnalysis {
+  private analyzeMatch(creator: Creator, campaign: Campaign, socialMap?: Map<string, SocialAccount[]>): MatchAnalysis {
     let score = 0;
     const reasons: string[] = [];
     const strengths: string[] = [];
@@ -173,13 +198,14 @@ export class MatchingService {
       concerns.push('Category mismatch - creator specializes in different niches');
     }
 
+    const totalFollowers = this.getTotalFollowers(creator, socialMap);
+
     // Requirements Match (25 points)
     if (campaign.requirements) {
       const req = campaign.requirements;
       
       // Followers check
       if (req.min_followers) {
-        const totalFollowers = this.getTotalFollowers(creator);
         if (totalFollowers >= req.min_followers) {
           score += 15;
           reasons.push(`Exceeds follower requirement (${totalFollowers.toLocaleString()} followers)`);
@@ -189,8 +215,22 @@ export class MatchingService {
         }
       }
 
-      // Note: Engagement rate check - requires social account data
-      // Will be implemented when social accounts are tracked
+      // Engagement rate check
+      const minEngagement = req.min_engagement_rate || 1.5;
+      const engRate = this.getAverageEngagementRate(creator.id, socialMap);
+      if (engRate >= minEngagement) {
+        score += 10;
+        reasons.push(`Exceeds engagement requirement (${engRate}% engagement rate)`);
+      } else {
+        concerns.push(`Below engagement requirement (has ${engRate}%, needs ${minEngagement}%)`);
+      }
+    }
+
+    // ── Follower Size & Budget Mismatch Penalty (max -35 points) ──
+    const { max: targetMax } = this.getTargetFollowerRange(Number(campaign.budget));
+    if (totalFollowers > targetMax * 3) {
+      score -= 35;
+      concerns.push('Follower count is too large for campaign budget (potential pricing mismatch)');
     }
 
     // Experience Level (20 points)
@@ -251,7 +291,7 @@ export class MatchingService {
     const estimatedROI = this.calculateEstimatedROI(creator, campaign, score);
 
     return {
-      score: Math.min(score, 100),
+      score: Math.max(0, Math.min(score, 100)),
       reasons,
       strengths,
       concerns,
@@ -262,10 +302,34 @@ export class MatchingService {
     };
   }
 
-  private getTotalFollowers(creator: Creator): number {
-    // Estimate followers - will be replaced with actual social account data
-    // For now, use campaign count as a proxy (10K followers per campaign)
+  private getTotalFollowers(creator: Creator, socialMap?: Map<string, SocialAccount[]>): number {
+    if (socialMap) {
+      const accounts = socialMap.get(creator.id) || [];
+      if (accounts.length > 0) {
+        return accounts.reduce((sum, sa) => sum + (sa.followers_count || 0), 0);
+      }
+    }
+    // Fallback proxy
     return creator.total_campaigns * 10000 + 5000;
+  }
+
+  private getAverageEngagementRate(creatorId: string, socialMap?: Map<string, SocialAccount[]>): number {
+    if (socialMap) {
+      const accounts = socialMap.get(creatorId) || [];
+      if (accounts.length > 0) {
+        const sum = accounts.reduce((sum, sa) => sum + Number(sa.engagement_rate || 0), 0);
+        return Number((sum / accounts.length).toFixed(2));
+      }
+    }
+    return 2.5;
+  }
+
+  private getTargetFollowerRange(budget: number): { min: number; max: number } {
+    if (budget > 500000) return { min: 1000000, max: 100000000 };
+    if (budget > 100000) return { min: 500000, max: 1000000 };
+    if (budget > 20000) return { min: 50000, max: 500000 };
+    if (budget > 5000) return { min: 10000, max: 50000 };
+    return { min: 1000, max: 10000 };
   }
 
   private calculateExperienceScore(creator: Creator): number {
@@ -683,6 +747,13 @@ export class MatchingService {
       return [];
     }
 
+    const socialAccounts = await this.socialAccountsRepository.find({
+      where: { creator_id: creatorId, is_connected: true },
+    });
+
+    const socialMap = new Map<string, SocialAccount[]>();
+    socialMap.set(creatorId, socialAccounts);
+
     const campaigns = await this.campaignsRepository.find({
       where: { status: CampaignStatus.ACTIVE },
       relations: ['brand'],
@@ -690,7 +761,7 @@ export class MatchingService {
 
     return campaigns.map(campaign => ({
       ...campaign,
-      matchScore: this.analyzeMatch(creator, campaign).score,
+      matchScore: this.analyzeMatch(creator, campaign, socialMap).score,
     })).sort((a, b) => b.matchScore - a.matchScore);
   }
 
@@ -742,19 +813,26 @@ export class MatchingService {
 
     const creator = await this.creatorsRepository.findOne({
       where: { id: creatorId },
-      relations: ['user'],  // socialAccounts relation may not exist
+      relations: ['user'],
     });
 
     if (!campaign || !creator) {
       throw new NotFoundException('Campaign or creator not found');
     }
 
+    const socialAccounts = await this.socialAccountsRepository.find({
+      where: { creator_id: creatorId, is_connected: true },
+    });
+
+    const socialMap = new Map<string, SocialAccount[]>();
+    socialMap.set(creatorId, socialAccounts);
+
     // STEP 1: Get ML predictions from FastAPI (port 5001)
     this.logger.log(`📊 Step 1: Getting ML predictions from FastAPI...`);
     let mlPrediction: any;
     try {
       mlPrediction = await this.aiMatchingService.getMatchScore(
-        this.aiMatchingService.formatCreatorForML(creator, []),  // Empty social accounts for now
+        this.aiMatchingService.formatCreatorForML(creator, socialAccounts),
         this.aiMatchingService.formatCampaignForML(campaign)
       );
       this.logger.log(`✅ ML Prediction received: score=${mlPrediction.match_score}, confidence=${mlPrediction.confidence}`);
@@ -762,7 +840,7 @@ export class MatchingService {
       this.logger.warn(`⚠️ ML API unavailable, using fallback predictions`);
       // Fallback to basic scoring
       mlPrediction = {
-        match_score: this.analyzeMatch(creator, campaign).score / 100,
+        match_score: this.analyzeMatch(creator, campaign, socialMap).score / 100,
         confidence: 0.5,
         model_scores: {
           xgboost: 0,
@@ -908,5 +986,363 @@ export class MatchingService {
       relations: ['creator', 'creator.user'],
       order: { match_score: 'DESC' },
     });
+  }
+
+  /**
+   * AI-driven budget optimizer helper calculations
+   */
+  private getCreatorCPM(platform: string, followers: number): number {
+    const p = platform.toLowerCase();
+    if (p === 'youtube') {
+      if (followers >= 1000000) return 950;
+      if (followers >= 500000) return 650;
+      if (followers >= 50000) return 450;
+      if (followers >= 10000) return 350;
+      return 250;
+    } else { // instagram / tiktok / default
+      if (followers >= 1000000) return 650;
+      if (followers >= 500000) return 450;
+      if (followers >= 50000) return 300;
+      if (followers >= 10000) return 200;
+      return 150;
+    }
+  }
+
+  private estimateBudgetCost(followers: number, platform: string, engagementRate: number = 3.5): number {
+    const f = Math.max(1000, followers || 25000);
+    let baseRate = 5000;
+
+    if (f >= 100000000) { // Super Mega (100M+) -> e.g. MrBeast
+      baseRate = 5000000 + ((f - 100000000) / 100000000) * 2000000; // ₹50 Lakhs - ₹70 Lakhs base
+    } else if (f >= 10000000) { // Mega (10M - 100M)
+      baseRate = 500000 + ((f - 10000000) / 90000000) * 1500000; // ₹5 Lakhs - ₹20 Lakhs base
+    } else if (f >= 1000000) { // Mega (1M - 10M)
+      baseRate = 120000 + ((f - 1000000) / 9000000) * 380000; // ₹1.2 Lakhs - ₹5 Lakhs base
+    } else if (f >= 500000) { // Macro (500K - 1M)
+      baseRate = 60000 + ((f - 500000) / 500000) * 60000; // ₹60K - ₹1.2 Lakhs base
+    } else if (f >= 50000) { // Mid (50K - 500K)
+      baseRate = 18000 + ((f - 50000) / 450000) * 42000; // ₹18K - ₹60K base
+    } else if (f >= 10000) { // Micro (10K - 50K)
+      baseRate = 5000 + ((f - 10000) / 40000) * 13000; // ₹5K - ₹18K base
+    } else { // Nano (<10K)
+      baseRate = 1500 + (f / 10000) * 3500; // ₹1.5K - ₹5K base
+    }
+
+    const platformMultiplier = platform?.toLowerCase() === 'youtube' ? 1.4 : 1.0;
+    const engMultiplier = Math.max(0.8, Math.min(2.0, (engagementRate || 3.5) / 3.5));
+
+    const finalRate = Math.round(baseRate * platformMultiplier * engMultiplier);
+    return Math.max(1500, finalRate);
+  }
+
+  async recommendBudgetAllocation(
+    campaignId: string,
+    totalBudget?: number,
+    targetMetric: string = 'reach',
+    lockedCreatorIds: string[] = [],
+  ): Promise<any> {
+    const campaign = await this.campaignsRepository.findOne({ where: { id: campaignId } });
+    if (!campaign) {
+      throw new NotFoundException('Campaign not found');
+    }
+
+    const effectiveBudget = (totalBudget && totalBudget > 0) ? Number(totalBudget) : Number(campaign.budget || 100000);
+
+    // Get all platform creators and connect their social metrics
+    const creators = await this.creatorsRepository.find({
+      where: { is_active: true },
+      relations: ['user'],
+    });
+
+    const socialAccounts = await this.socialAccountsRepository.find({
+      where: { is_connected: true },
+    });
+
+    const socialMap = new Map<string, SocialAccount[]>();
+    for (const sa of socialAccounts) {
+      let list = socialMap.get(sa.creator_id);
+      if (!list) {
+        list = [];
+        socialMap.set(sa.creator_id, list);
+      }
+      list.push(sa);
+    }
+
+    // Get discovered creators for this campaign, with fallback to global discovered creators
+    let discoveredCreators = await this.discoveredCreatorsRepository.find({
+      where: { campaign_id: campaignId },
+    });
+
+    if (discoveredCreators.length < 5) {
+      const globalDiscovered = await this.discoveredCreatorsRepository.find({
+        take: 20,
+        order: { match_score: 'DESC' },
+      });
+      const existingIds = new Set(discoveredCreators.map((dc) => dc.id));
+      for (const g of globalDiscovered) {
+        if (!existingIds.has(g.id)) {
+          discoveredCreators.push(g);
+        }
+      }
+    }
+
+    // 1. Build registered platform creators pool
+    const registeredPool = creators.map((creator) => {
+      const followers = this.getTotalFollowers(creator, socialMap);
+      const engagementRate = this.getAverageEngagementRate(creator.id, socialMap);
+      const cost = this.estimateBudgetCost(followers, campaign.platform, engagementRate);
+      
+      const expectedImpressions = Math.round((followers || 25000) * 0.85);
+      const expectedEngagements = Math.round(expectedImpressions * ((engagementRate || 4.0) / 100));
+      const matchScore = this.analyzeMatch(creator, campaign, socialMap).score;
+
+      let metricValue = expectedImpressions;
+      if (targetMetric === 'engagement') {
+        metricValue = expectedEngagements;
+      } else if (targetMetric === 'conversions') {
+        metricValue = Math.round(expectedEngagements * 0.15);
+      }
+      const density = cost > 0 ? (metricValue * matchScore) / cost : 0;
+
+      return {
+        creator_id: creator.id,
+        name: `${creator.user?.first_name || ''} ${creator.user?.last_name || ''}`.trim() || 'Creator',
+        avatar_url: creator.avatar_url,
+        followers,
+        engagementRate,
+        cost,
+        expectedImpressions,
+        expectedEngagements,
+        matchScore,
+        density,
+        isDiscovered: false,
+      };
+    });
+
+    // 2. Build campaign discovered creators pool
+    const discoveredPool = discoveredCreators.map((dc) => {
+      const followers = dc.followers_count || 50000;
+      const engagementRate = Number(dc.engagement_rate) || 4.5;
+      const cost = this.estimateBudgetCost(followers, dc.platform || campaign.platform, engagementRate);
+      
+      const expectedImpressions = Math.round(followers * 0.85);
+      const expectedEngagements = Math.round(expectedImpressions * (engagementRate / 100));
+      const matchScore = Number(dc.match_score) || 75;
+
+      let metricValue = expectedImpressions;
+      if (targetMetric === 'engagement') {
+        metricValue = expectedEngagements;
+      } else if (targetMetric === 'conversions') {
+        metricValue = Math.round(expectedEngagements * 0.15);
+      }
+      const density = cost > 0 ? (metricValue * matchScore) / cost : 0;
+
+      return {
+        creator_id: dc.id,
+        name: dc.name || 'Discovered Creator',
+        avatar_url: dc.avatar_url,
+        followers,
+        engagementRate,
+        cost,
+        expectedImpressions,
+        expectedEngagements,
+        matchScore,
+        density,
+        isDiscovered: true,
+      };
+    });
+
+    const preselectedIds = new Set(lockedCreatorIds);
+
+    // Filter out creators whose actual base cost exceeds the campaign budget
+    // (Unless they are locked by the user, in which case we keep them in the pool)
+    const creatorPool = [...registeredPool, ...discoveredPool].filter(
+      (item) => item.cost <= effectiveBudget || preselectedIds.has(item.creator_id)
+    );
+
+    // Solve greedy knapsack
+    let remainingBudget = effectiveBudget;
+    const selectedAllocations: any[] = [];
+
+    // First pass: select locked creators
+    for (const item of creatorPool) {
+      if (preselectedIds.has(item.creator_id)) {
+        selectedAllocations.push({
+          creator_id: item.creator_id,
+          name: item.name,
+          avatar_url: item.avatar_url,
+          followers: item.followers,
+          engagementRate: item.engagementRate,
+          allocated_amount: item.cost,
+          expected_impressions: item.expectedImpressions,
+          expected_engagements: item.expectedEngagements,
+          is_locked: true,
+          matchScore: item.matchScore,
+          isDiscovered: item.isDiscovered,
+        });
+        remainingBudget -= item.cost;
+      }
+    }
+
+    // Second pass: fill remaining budget with max 35% allocation per single creator
+    const maxSingleCreatorCost = Math.max(8000, effectiveBudget * 0.35);
+    const remainingPool = creatorPool
+      .filter((item) => !preselectedIds.has(item.creator_id))
+      .sort((a, b) => b.density - a.density);
+
+    for (const item of remainingPool) {
+      const actualCost = Math.min(item.cost, maxSingleCreatorCost);
+      if (remainingBudget >= actualCost) {
+        const scale = item.cost > 0 ? actualCost / item.cost : 1;
+        selectedAllocations.push({
+          creator_id: item.creator_id,
+          name: item.name,
+          avatar_url: item.avatar_url,
+          followers: item.followers,
+          engagementRate: item.engagementRate,
+          allocated_amount: Math.round(actualCost),
+          expected_impressions: Math.round(item.expectedImpressions * scale),
+          expected_engagements: Math.round(item.expectedEngagements * scale),
+          is_locked: false,
+          matchScore: item.matchScore,
+          isDiscovered: item.isDiscovered,
+        });
+        remainingBudget -= actualCost;
+      }
+    }
+
+    // Compute aggregated outcomes
+    const allocatedBudget = effectiveBudget - remainingBudget;
+    const totalReach = selectedAllocations.reduce((sum, item) => sum + item.expected_impressions, 0);
+    const totalEngagements = selectedAllocations.reduce((sum, item) => sum + item.expected_engagements, 0);
+    
+    // Weighted average engagement rate
+    const avgEng = selectedAllocations.length > 0 
+      ? Number((selectedAllocations.reduce((sum, item) => sum + item.engagementRate, 0) / selectedAllocations.length).toFixed(2))
+      : 0;
+
+    // Conversion estimation: 1.5% of impressions
+    const conversions = Math.round(totalReach * 0.015);
+    const predictedRoi = allocatedBudget > 0 
+      ? Number(((conversions * 1500) / allocatedBudget * 100).toFixed(1))
+      : 0;
+
+    return {
+      total_budget: effectiveBudget,
+      allocated_budget: Number(allocatedBudget.toFixed(2)),
+      remaining_budget: Number(remainingBudget.toFixed(2)),
+      predicted_reach: totalReach,
+      predicted_engagement: avgEng,
+      predicted_roi: predictedRoi,
+      conversions,
+      allocations: selectedAllocations,
+    };
+  }
+
+  async recalculateAllocationStats(
+    campaignId: string,
+    allocations: Array<{ creator_id: string; allocated_amount: number; is_locked: boolean }>,
+  ): Promise<any> {
+    const campaign = await this.campaignsRepository.findOne({ where: { id: campaignId } });
+    if (!campaign) {
+      throw new NotFoundException('Campaign not found');
+    }
+
+    const socialAccounts = await this.socialAccountsRepository.find({
+      where: { is_connected: true },
+    });
+
+    const socialMap = new Map<string, SocialAccount[]>();
+    for (const sa of socialAccounts) {
+      let list = socialMap.get(sa.creator_id);
+      if (!list) {
+        list = [];
+        socialMap.set(sa.creator_id, list);
+      }
+      list.push(sa);
+    }
+
+    const recalculatedAllocations: any[] = [];
+    let allocatedBudget = 0;
+
+    for (const alloc of allocations) {
+      let creatorName = 'Creator';
+      let avatarUrl: string | null = null;
+      let followers = 25000;
+      let engagementRate = 4.0;
+      let matchScore = 75;
+      let isDiscovered = false;
+
+      const registered = await this.creatorsRepository.findOne({
+        where: { id: alloc.creator_id },
+        relations: ['user'],
+      });
+
+      if (registered) {
+        followers = this.getTotalFollowers(registered, socialMap);
+        engagementRate = this.getAverageEngagementRate(registered.id, socialMap);
+        matchScore = this.analyzeMatch(registered, campaign, socialMap).score;
+        creatorName = `${registered.user?.first_name || ''} ${registered.user?.last_name || ''}`.trim() || 'Creator';
+        avatarUrl = registered.avatar_url;
+      } else {
+        const discovered = await this.discoveredCreatorsRepository.findOne({
+          where: { id: alloc.creator_id },
+        });
+        if (discovered) {
+          followers = discovered.followers_count || 50000;
+          engagementRate = Number(discovered.engagement_rate) || 4.5;
+          matchScore = Number(discovered.match_score) || 75;
+          creatorName = discovered.name;
+          avatarUrl = discovered.avatar_url;
+          isDiscovered = true;
+        } else {
+          continue;
+        }
+      }
+
+      // Adjust expectations based on custom input budget
+      const baseCost = this.estimateBudgetCost(followers, campaign.platform, engagementRate);
+      const scaleFactor = baseCost > 0 ? Number(alloc.allocated_amount) / baseCost : 1;
+
+      const expectedImpressions = Math.round(followers * 0.85 * Math.min(2, scaleFactor));
+      const expectedEngagements = Math.round(expectedImpressions * (engagementRate / 100));
+
+      recalculatedAllocations.push({
+        creator_id: alloc.creator_id,
+        name: creatorName,
+        avatar_url: avatarUrl,
+        followers,
+        engagementRate,
+        allocated_amount: Number(alloc.allocated_amount),
+        expected_impressions: expectedImpressions,
+        expected_engagements: expectedEngagements,
+        is_locked: alloc.is_locked,
+        matchScore,
+        isDiscovered,
+      });
+
+      allocatedBudget += Number(alloc.allocated_amount);
+    }
+
+    const totalReach = recalculatedAllocations.reduce((sum, item) => sum + item.expected_impressions, 0);
+    const totalEngagements = recalculatedAllocations.reduce((sum, item) => sum + item.expected_engagements, 0);
+    
+    const avgEng = recalculatedAllocations.length > 0 
+      ? Number((recalculatedAllocations.reduce((sum, item) => sum + item.engagementRate, 0) / recalculatedAllocations.length).toFixed(2))
+      : 0;
+
+    const conversions = Math.round(totalReach * 0.015);
+    const predictedRoi = allocatedBudget > 0 
+      ? Number(((conversions * 1500) / allocatedBudget * 100).toFixed(1))
+      : 0;
+
+    return {
+      allocated_budget: Number(allocatedBudget.toFixed(2)),
+      predicted_reach: totalReach,
+      predicted_engagement: avgEng,
+      predicted_roi: predictedRoi,
+      conversions,
+      allocations: recalculatedAllocations,
+    };
   }
 }

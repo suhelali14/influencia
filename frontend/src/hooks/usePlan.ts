@@ -19,6 +19,7 @@ export type PlanFeature =
   | 'apiAccess'
   | 'prioritySupport'
   | 'campaignCreate'
+  | 'budgetOptimization'
 
 const FEATURE_MIN_TIER: Record<PlanFeature, string> = {
   campaignCreate: 'free',
@@ -26,6 +27,7 @@ const FEATURE_MIN_TIER: Record<PlanFeature, string> = {
   advancedAnalytics: 'growth',
   pdfReports: 'growth',
   sideByCompare: 'growth',
+  budgetOptimization: 'growth',
   apiAccess: 'pro',
   prioritySupport: 'growth',
 }
@@ -37,6 +39,7 @@ export const FEATURE_UPGRADE_LABEL: Record<PlanFeature, string> = {
   advancedAnalytics: 'Growth',
   pdfReports: 'Growth',
   sideByCompare: 'Growth',
+  budgetOptimization: 'Growth',
   apiAccess: 'Pro',
   prioritySupport: 'Growth',
 }

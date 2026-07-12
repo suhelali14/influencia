@@ -8,6 +8,9 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { PlanLimitsGuard } from '../common/guards/plan-limits.guard';
 import { PaginationDto } from '../common/dto/pagination.dto';
 
+import { RecommendBudgetDto } from './dto/recommend-budget.dto';
+import { RecalculateBudgetDto } from './dto/recalculate-budget.dto';
+
 @ApiTags('matching')
 @Controller('matching')
 @UseGuards(JwtAuthGuard, PlanLimitsGuard)
@@ -57,6 +60,15 @@ export class MatchingController {
   @ApiOperation({ summary: 'Get all collaboration requests for campaign' })
   getCollaborations(@Param('campaignId') campaignId: string) {
     return this.matchingService.getCollaborationsByCampaign(campaignId);
+  }
+
+  @Get('campaign/:campaignId/creator/:creatorId/report')
+  @ApiOperation({ summary: 'Generate detailed AI report for campaign and creator' })
+  getAIReport(
+    @Param('campaignId') campaignId: string,
+    @Param('creatorId') creatorId: string,
+  ) {
+    return this.matchingService.generateAIReport(campaignId, creatorId);
   }
 
   @Get('creator/:creatorId/campaigns')
@@ -113,5 +125,28 @@ export class MatchingController {
     });
     
     res.send(pdfBuffer);
+  }
+
+  @Post('campaign/:campaignId/budget-recommendation')
+  @ApiOperation({ summary: 'Generate optimized creator mix and budget recommendation' })
+  async recommendBudget(
+    @Param('campaignId') campaignId: string,
+    @Body() dto: RecommendBudgetDto,
+  ) {
+    return this.matchingService.recommendBudgetAllocation(
+      campaignId,
+      dto.total_budget,
+      dto.target_metric,
+      dto.locked_creator_ids,
+    );
+  }
+
+  @Post('campaign/:campaignId/budget-recalculate')
+  @ApiOperation({ summary: 'Recalculate campaign ROI based on custom creator combination' })
+  async recalculateBudget(
+    @Param('campaignId') campaignId: string,
+    @Body() dto: RecalculateBudgetDto,
+  ) {
+    return this.matchingService.recalculateAllocationStats(campaignId, dto.allocations);
   }
 }

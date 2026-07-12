@@ -87,6 +87,30 @@ export interface Collaboration {
   campaign?: Campaign
 }
 
+export interface BudgetAllocation {
+  creator_id: string
+  name: string
+  avatar_url: string | null
+  followers: number
+  engagementRate: number
+  allocated_amount: number
+  expected_impressions: number
+  expected_engagements: number
+  is_locked: boolean
+  matchScore: number
+}
+
+export interface BudgetRecommendation {
+  total_budget: number
+  allocated_budget: number
+  remaining_budget: number
+  predicted_reach: number
+  predicted_engagement: number
+  predicted_roi: number
+  conversions: number
+  allocations: BudgetAllocation[]
+}
+
 export const matchingApi = {
   findCreatorsForCampaign: async (campaignId: string, params?: PaginationParams): Promise<PaginatedResponse<CreatorMatch>> => {
     const query = new URLSearchParams()
@@ -163,6 +187,30 @@ export const matchingApi = {
     link.remove()
     window.URL.revokeObjectURL(url)
   },
+
+  recommendBudget: async (
+    campaignId: string,
+    totalBudget: number,
+    targetMetric: string = 'reach',
+    lockedCreatorIds: string[] = [],
+  ): Promise<BudgetRecommendation> => {
+    const { data } = await api.post<BudgetRecommendation>(
+      `/matching/campaign/${campaignId}/budget-recommendation`,
+      { total_budget: totalBudget, target_metric: targetMetric, locked_creator_ids: lockedCreatorIds }
+    )
+    return data
+  },
+
+  recalculateBudget: async (
+    campaignId: string,
+    allocations: Array<{ creator_id: string; allocated_amount: number; is_locked: boolean }>,
+  ): Promise<BudgetRecommendation> => {
+    const { data } = await api.post<BudgetRecommendation>(
+      `/matching/campaign/${campaignId}/budget-recalculate`,
+      { allocations }
+    )
+    return data
+  },
 }
 
 // Named exports for convenience
@@ -172,3 +220,6 @@ export const sendCollaborationRequest = matchingApi.sendCollaborationRequest
 export const getCollaborations = matchingApi.getCollaborations
 export const getRecommendedCampaigns = matchingApi.getRecommendedCampaigns
 export const downloadPDFReport = matchingApi.downloadPDFReport
+export const recommendBudget = matchingApi.recommendBudget
+export const recalculateBudget = matchingApi.recalculateBudget
+
