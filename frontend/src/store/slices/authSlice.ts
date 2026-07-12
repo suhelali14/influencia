@@ -38,17 +38,9 @@ export const login = createAsyncThunk(
   'auth/login',
   async (credentials: { email: string; password: string }, { rejectWithValue }) => {
     try {
-      console.log('🔵 authSlice: Login thunk called')
-      console.log('📧 Credentials:', { email: credentials.email, password: '***' })
-      
-      console.log('🌐 Calling API...')
       const response = await authApi.login(credentials)
-      
-      console.log('✅ API Response received with session_id')
       return response
     } catch (error: any) {
-      console.error('❌ API Error:', error)
-      console.error('❌ Error response:', error.response?.data)
       return rejectWithValue(error.response?.data?.message || 'Login failed')
     }
   }

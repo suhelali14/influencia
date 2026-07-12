@@ -96,14 +96,15 @@ export class PlanLimitsGuard implements CanActivate {
       }
     }
 
-    // ── Enforce Premium Features (PDF / Analytics) ────────────────────
-    if (path.includes('/compare') && method === 'GET') {
+    // ── Enforce Premium Features (PDF / Analytics / Compare) ──────────
+    if ((path.includes('/compare') || path.includes('/download-report')) && method === 'GET') {
       const allowedTiers = ['growth', 'pro', 'enterprise'];
       if (!allowedTiers.includes(tier)) {
+        const featureName = path.includes('/compare') ? 'Side-by-side comparison' : 'PDF Report download';
         throw new HttpException(
           {
             statusCode: HttpStatus.PAYMENT_REQUIRED,
-            message: 'Side-by-side comparison features are only available on the Growth plan or higher.',
+            message: `${featureName} features are only available on the Growth plan or higher.`,
             error: 'FeatureNotAllowed',
           },
           HttpStatus.PAYMENT_REQUIRED,

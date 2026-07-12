@@ -5,11 +5,12 @@ import { MatchingService } from './matching.service';
 import { AIPythonService } from './ai-python.service';
 import { PdfGenerationService } from './pdf-generation.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { PlanLimitsGuard } from '../common/guards/plan-limits.guard';
 import { PaginationDto } from '../common/dto/pagination.dto';
 
 @ApiTags('matching')
 @Controller('matching')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, PlanLimitsGuard)
 @ApiBearerAuth()
 export class MatchingController {
   constructor(

@@ -4,6 +4,8 @@ import DashboardLayout from '../../components/Layout/DashboardLayout'
 import { discoveryApi, type DiscoveredCreator } from '../../api/discovery'
 import { matchingApi, type CreatorMatch } from '../../api/matching'
 import { campaignsApi } from '../../api/campaigns'
+import { usePlan } from '../../hooks/usePlan'
+import PlanGate from '../../components/PlanGate'
 import toast from 'react-hot-toast'
 import {
   Search, Globe, Users, TrendingUp, Star, ExternalLink, ChevronLeft, ChevronRight,
@@ -63,6 +65,7 @@ export default function CreatorDiscovery() {
   const { campaignId } = useParams<{ campaignId: string }>()
   const [tab, setTab] = useState<Tab>('discovery')
   const [campaign, setCampaign] = useState<any>(null)
+  const { canDo } = usePlan()
 
   // Discovery state
   const [discovered, setDiscovered] = useState<DiscoveredCreator[]>([])
@@ -572,98 +575,102 @@ export default function CreatorDiscovery() {
 
       {/* ── COMPARE TAB ────────────────────────────────────────────────── */}
       {tab === 'compare' && (
-        <div>
-          {compareLoading ? (
-            <div className="text-center py-20"><Loader2 className="w-8 h-8 animate-spin mx-auto text-purple-600" /></div>
-          ) : compareData ? (
-            <>
-              {/* Summary stat cards */}
-              <div className="grid grid-cols-2 gap-4 mb-6">
-                <div className="card bg-gradient-to-br from-purple-50 to-indigo-50 border-purple-200">
-                  <div className="flex items-center gap-2 mb-2">
-                    <Globe className="w-5 h-5 text-purple-600" />
-                    <h3 className="text-sm font-semibold text-purple-700">Internet Discovery</h3>
+        !canDo('sideByCompare') ? (
+          <PlanGate feature="sideByCompare" />
+        ) : (
+          <div>
+            {compareLoading ? (
+              <div className="text-center py-20"><Loader2 className="w-8 h-8 animate-spin mx-auto text-purple-600" /></div>
+            ) : compareData ? (
+              <>
+                {/* Summary stat cards */}
+                <div className="grid grid-cols-2 gap-4 mb-6">
+                  <div className="card bg-gradient-to-br from-purple-50 to-indigo-50 border-purple-200">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Globe className="w-5 h-5 text-purple-600" />
+                      <h3 className="text-sm font-semibold text-purple-700">Internet Discovery</h3>
+                    </div>
+                    <p className="text-4xl font-bold text-purple-900">{compareData.summary.total_discovered}</p>
+                    <p className="text-sm text-purple-600 mt-1">Avg Score: <span className="font-bold">{compareData.summary.avg_discovered_score}%</span></p>
                   </div>
-                  <p className="text-4xl font-bold text-purple-900">{compareData.summary.total_discovered}</p>
-                  <p className="text-sm text-purple-600 mt-1">Avg Score: <span className="font-bold">{compareData.summary.avg_discovered_score}%</span></p>
-                </div>
-                <div className="card bg-gradient-to-br from-blue-50 to-teal-50 border-blue-200">
-                  <div className="flex items-center gap-2 mb-2">
-                    <Users className="w-5 h-5 text-blue-600" />
-                    <h3 className="text-sm font-semibold text-blue-700">Platform Creators</h3>
+                  <div className="card bg-gradient-to-br from-blue-50 to-teal-50 border-blue-200">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Users className="w-5 h-5 text-blue-600" />
+                      <h3 className="text-sm font-semibold text-blue-700">Platform Creators</h3>
+                    </div>
+                    <p className="text-4xl font-bold text-blue-900">{compareData.summary.total_platform}</p>
+                    <p className="text-sm text-blue-600 mt-1">Avg Score: <span className="font-bold">{compareData.summary.avg_platform_score}%</span></p>
                   </div>
-                  <p className="text-4xl font-bold text-blue-900">{compareData.summary.total_platform}</p>
-                  <p className="text-sm text-blue-600 mt-1">Avg Score: <span className="font-bold">{compareData.summary.avg_platform_score}%</span></p>
                 </div>
-              </div>
 
-              <div className="grid lg:grid-cols-2 gap-6">
-                {/* Internet results */}
-                <div className="card">
-                  <h3 className="text-base font-semibold text-purple-700 mb-4 flex items-center gap-2">
-                    <Globe className="w-5 h-5" /> Top Internet Creators
-                  </h3>
-                  <div className="space-y-2">
-                    {compareData.discovered.map((c: any, i: number) => (
-                      <div key={c.id} className="flex items-center justify-between p-3 bg-gray-50 hover:bg-purple-50 rounded-lg transition-colors">
-                        <div className="flex items-center gap-3">
-                          <span className="text-sm font-bold text-gray-400 w-6">#{i + 1}</span>
-                          <div>
-                            <p className="text-sm font-medium text-gray-900">{c.name}</p>
-                            <p className="text-xs text-gray-500">{formatFollowers(c.followers_count)} • {c.region}</p>
+                <div className="grid lg:grid-cols-2 gap-6">
+                  {/* Internet results */}
+                  <div className="card">
+                    <h3 className="text-base font-semibold text-purple-700 mb-4 flex items-center gap-2">
+                      <Globe className="w-5 h-5" /> Top Internet Creators
+                    </h3>
+                    <div className="space-y-2">
+                      {compareData.discovered.map((c: any, i: number) => (
+                        <div key={c.id} className="flex items-center justify-between p-3 bg-gray-50 hover:bg-purple-50 rounded-lg transition-colors">
+                          <div className="flex items-center gap-3">
+                            <span className="text-sm font-bold text-gray-400 w-6">#{i + 1}</span>
+                            <div>
+                              <p className="text-sm font-medium text-gray-900">{c.name}</p>
+                              <p className="text-xs text-gray-500">{formatFollowers(c.followers_count)} • {c.region}</p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            {c.profile_url && (
+                              <a href={c.profile_url} target="_blank" rel="noopener noreferrer"
+                                className="text-gray-400 hover:text-purple-600 transition-colors">
+                                <ExternalLink className="w-3.5 h-3.5" />
+                              </a>
+                            )}
+                            <div className={`px-2 py-0.5 rounded text-xs font-bold border ${scoreColor(c.match_score)}`}>
+                              {c.match_score}%
+                            </div>
                           </div>
                         </div>
-                        <div className="flex items-center gap-2">
-                          {c.profile_url && (
-                            <a href={c.profile_url} target="_blank" rel="noopener noreferrer"
-                              className="text-gray-400 hover:text-purple-600 transition-colors">
-                              <ExternalLink className="w-3.5 h-3.5" />
-                            </a>
-                          )}
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Platform results */}
+                  <div className="card">
+                    <h3 className="text-base font-semibold text-blue-700 mb-4 flex items-center gap-2">
+                      <Users className="w-5 h-5" /> Top Platform Creators
+                    </h3>
+                    <div className="space-y-2">
+                      {compareData.platform.map((c: any, i: number) => (
+                        <div key={c.id} className="flex items-center justify-between p-3 bg-gray-50 hover:bg-blue-50 rounded-lg transition-colors">
+                          <div className="flex items-center gap-3">
+                            <span className="text-sm font-bold text-gray-400 w-6">#{i + 1}</span>
+                            <div>
+                              <p className="text-sm font-medium text-gray-900">{c.name}</p>
+                              <p className="text-xs text-gray-500">{formatFollowers(c.followers_count)} • {c.region}</p>
+                            </div>
+                          </div>
                           <div className={`px-2 py-0.5 rounded text-xs font-bold border ${scoreColor(c.match_score)}`}>
                             {c.match_score}%
                           </div>
                         </div>
-                      </div>
-                    ))}
+                      ))}
+                    </div>
                   </div>
                 </div>
-
-                {/* Platform results */}
-                <div className="card">
-                  <h3 className="text-base font-semibold text-blue-700 mb-4 flex items-center gap-2">
-                    <Users className="w-5 h-5" /> Top Platform Creators
-                  </h3>
-                  <div className="space-y-2">
-                    {compareData.platform.map((c: any, i: number) => (
-                      <div key={c.id} className="flex items-center justify-between p-3 bg-gray-50 hover:bg-blue-50 rounded-lg transition-colors">
-                        <div className="flex items-center gap-3">
-                          <span className="text-sm font-bold text-gray-400 w-6">#{i + 1}</span>
-                          <div>
-                            <p className="text-sm font-medium text-gray-900">{c.name}</p>
-                            <p className="text-xs text-gray-500">{formatFollowers(c.followers_count)} • {c.region}</p>
-                          </div>
-                        </div>
-                        <div className={`px-2 py-0.5 rounded text-xs font-bold border ${scoreColor(c.match_score)}`}>
-                          {c.match_score}%
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
+              </>
+            ) : (
+              <div className="card text-center py-16">
+                <BarChart3 className="w-14 h-14 mx-auto text-gray-300 mb-4" />
+                <h3 className="text-lg font-semibold text-gray-700 mb-2">No Comparison Data Yet</h3>
+                <p className="text-gray-400 text-sm">Run Internet Search first, then come back to compare.</p>
+                <button onClick={() => setTab('discovery')} className="mt-4 btn-primary inline-flex items-center gap-2 text-sm">
+                  <Globe className="w-4 h-4" /> Go to Internet Search
+                </button>
               </div>
-            </>
-          ) : (
-            <div className="card text-center py-16">
-              <BarChart3 className="w-14 h-14 mx-auto text-gray-300 mb-4" />
-              <h3 className="text-lg font-semibold text-gray-700 mb-2">No Comparison Data Yet</h3>
-              <p className="text-gray-400 text-sm">Run Internet Search first, then come back to compare.</p>
-              <button onClick={() => setTab('discovery')} className="mt-4 btn-primary inline-flex items-center gap-2 text-sm">
-                <Globe className="w-4 h-4" /> Go to Internet Search
-              </button>
-            </div>
-          )}
-        </div>
+            )}
+          </div>
+        )
       )}
     </DashboardLayout>
   )

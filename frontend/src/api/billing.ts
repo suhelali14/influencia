@@ -47,15 +47,15 @@ export const billingApi = {
   /**
    * Get brand's active plan limits usage and all pricing choices.
    */
-  getStatus: async () => {
+  getStatus: async (): Promise<BillingStatus> => {
     const { data } = await api.get<BillingStatus>('/billing/status')
     return data
   },
 
   /**
-   * Create Razorpay Checkout parameters for subscription upgrade.
+   * Create Razorpay Checkout parameters for subscription upgrade/downgrade.
    */
-  subscribe: async (planId: string) => {
+  subscribe: async (planId: string): Promise<SubscriptionCheckoutOptions> => {
     const { data } = await api.post<SubscriptionCheckoutOptions>('/billing/subscribe', { planId })
     return data
   },
@@ -67,8 +67,16 @@ export const billingApi = {
     razorpay_payment_id: string
     razorpay_subscription_id: string
     razorpay_signature: string
-  }) => {
+  }): Promise<{ success: boolean; tier: string }> => {
     const { data } = await api.post<{ success: boolean; tier: string }>('/billing/verify', payload)
+    return data
+  },
+
+  /**
+   * Cancel the active subscription (downgrades to free at end of billing cycle).
+   */
+  cancelSubscription: async (): Promise<{ success: boolean; message: string }> => {
+    const { data } = await api.post<{ success: boolean; message: string }>('/billing/cancel')
     return data
   },
 }

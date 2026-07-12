@@ -294,6 +294,37 @@ export class BillingService {
   }
 
   /**
+   * Cancel active subscription and downgrade to Free plan.
+   */
+  async cancelSubscription(userId: string) {
+    const brand = await this.brandRepo.findOne({ where: { user_id: userId } });
+    if (!brand) throw new NotFoundException('Brand profile not found');
+
+    const subscriptionId = brand.razorpay_subscription_id;
+    if (subscriptionId && !subscriptionId.startsWith('sub_mock_')) {
+      try {
+        const auth = Buffer.from(`${this.KEY_ID}:${this.KEY_SECRET}`).toString('base64');
+        await axios.post(
+          `https://api.razorpay.com/v1/subscriptions/${subscriptionId}/cancel`,
+          { cancel_at_cycle_end: 1 },
+          { headers: { Authorization: `Basic ${auth}` } },
+        );
+        this.logger.log(`Subscription ${subscriptionId} cancelled via Razorpay for brand ${brand.company_name}`);
+      } catch (err) {
+        this.logger.error(`Failed to cancel Razorpay subscription: ${err.message}`);
+      }
+    }
+
+    brand.subscription_tier = 'free';
+    brand.subscription_status = 'inactive';
+    brand.subscription_expires_at = null;
+    brand.razorpay_subscription_id = null;
+    await this.brandRepo.save(brand);
+
+    return { success: true, message: 'Subscription successfully cancelled and account downgraded to Free.' };
+  }
+
+  /**
    * Reset monthly AI discovery usage counters.
    * CQ-4: Scoped to active subscriptions only.
    */

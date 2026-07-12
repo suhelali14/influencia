@@ -52,6 +52,17 @@ export class BillingController {
   }
 
   /**
+   * Cancel active subscription.
+   */
+  @Post('cancel')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Cancel the active SaaS subscription' })
+  async cancel(@Request() req: any) {
+    return this.billingService.cancelSubscription(req.user.userId);
+  }
+
+  /**
    * Razorpay Webhook Receiver (public — no JWT guard).
    * SEC-3: Uses raw body for HMAC signature verification.
    * NestJS must be bootstrapped with rawBody: true in main.ts.
