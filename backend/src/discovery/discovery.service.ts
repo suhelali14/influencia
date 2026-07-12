@@ -63,7 +63,7 @@ export class DiscoveryService {
         where: { campaign_id: campaignId, status: JobStatus.DONE },
         order: { completed_at: 'DESC' },
       });
-      if (recent) {
+      if (recent && recent.total_found > 0) {
         const ageHours = (Date.now() - new Date(recent.completed_at).getTime()) / 3_600_000;
         if (ageHours < 24) {
           return {
