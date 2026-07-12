@@ -65,15 +65,19 @@ function resolveHostWithFallback(hostname: string): Promise<string> {
           entities: [__dirname + '/**/*.entity{.ts,.js}'],
           synchronize: false, // Disabled - schema managed by SQL migrations in /migrations
           logging: !isProduction,
-          ssl: {
-            rejectUnauthorized: false,
-            servername: dbHost, // Use original hostname for SNI (SSL needs this)
-          },
+          ssl: isProduction
+            ? {
+                rejectUnauthorized: true, // Enforce cert verification in production
+                servername: dbHost,        // SNI required for Neon/PgBouncer
+              }
+            : false,
           extra: {
-            ssl: {
-              rejectUnauthorized: false,
-              servername: dbHost, // SNI for SSL handshake
-            },
+            ssl: isProduction
+              ? {
+                  rejectUnauthorized: true,
+                  servername: dbHost,
+                }
+              : false,
             // Connection pool settings for production
             max: isProduction ? 20 : 5,
             idleTimeoutMillis: 30000,

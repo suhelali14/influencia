@@ -35,8 +35,8 @@ export class PlanLimitsGuard implements CanActivate {
     const request = context.switchToHttp().getRequest();
     const user = request.user;
 
-    if (!user || user.role !== 'brand') {
-      // Pass-through for non-brand admins
+    if (!user || user.role !== 'brand_admin') {
+      // Pass-through for non-brand admins (creators, system, admin)
       return true;
     }
 

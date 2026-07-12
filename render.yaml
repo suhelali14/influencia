@@ -71,6 +71,13 @@ services:
       # Frontend URL (set after frontend deploys)
       - key: FRONTEND_URL
         value: "https://influencia-frontend.onrender.com"
+      # Razorpay — set credentials in Render Dashboard, NOT here!
+      - key: RAZORPAY_KEY_ID
+        sync: false
+      - key: RAZORPAY_KEY_SECRET
+        sync: false
+      - key: RAZORPAY_WEBHOOK_SECRET
+        sync: false
 
   # ─────────────────────────────────────────────
   # 2. Frontend — React + Vite + Nginx

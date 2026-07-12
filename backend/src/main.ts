@@ -48,13 +48,19 @@ async function bootstrap() {
   const logger = new Logger('Bootstrap');
   
   const app = await NestFactory.create(AppModule, {
-    logger: process.env.NODE_ENV === 'production' 
-      ? ['error', 'warn', 'log'] 
+    logger: process.env.NODE_ENV === 'production'
+      ? ['error', 'warn', 'log']
       : ['error', 'warn', 'log', 'debug', 'verbose'],
+    rawBody: true, // Required for Razorpay webhook HMAC signature verification
   });
 
   const configService = app.get(ConfigService);
   const isProduction = configService.get('NODE_ENV') === 'production';
+
+  // Trust one proxy hop (Nginx on Render/Docker) so req.ip is correctly set
+  // for rate-limiting and audit logging.
+  const expressApp = app.getHttpAdapter().getInstance();
+  expressApp.set('trust proxy', 1);
 
   // Security middleware
   app.use(helmet({

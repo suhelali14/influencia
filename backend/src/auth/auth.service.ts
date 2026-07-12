@@ -1,4 +1,5 @@
 import { Injectable, UnauthorizedException, ConflictException, Inject, forwardRef, Logger, BadRequestException, NotFoundException } from '@nestjs/common';
+import * as crypto from 'crypto';
 import { JwtService } from '@nestjs/jwt';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -116,14 +117,16 @@ export class AuthService {
       where: { email: loginDto.email },
     });
 
+    // Generic error — do NOT distinguish between "no account" and "wrong password"
+    // Revealing which emails are registered is an enumeration vulnerability.
     if (!user) {
-      throw new UnauthorizedException('No account found with this email. Please register first.');
+      throw new UnauthorizedException('Invalid email or password.');
     }
 
     const isPasswordValid = await bcrypt.compare(loginDto.password, user.password_hash);
 
     if (!isPasswordValid) {
-      throw new UnauthorizedException('Incorrect password. Please try again.');
+      throw new UnauthorizedException('Invalid email or password.');
     }
 
     if (user.status !== 'active') {
@@ -248,7 +251,8 @@ export class AuthService {
       throw new ConflictException('A user with this email already exists.');
     }
 
-    const tempPassword = 'InfluenciaBrand2026!';
+    // Generate a secure random temporary password (not hardcoded)
+    const tempPassword = crypto.randomBytes(12).toString('base64url') + '!Aa1';
     const password_hash = await bcrypt.hash(tempPassword, 10);
 
     const user = this.userRepository.create({

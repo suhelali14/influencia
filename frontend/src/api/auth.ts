@@ -28,27 +28,13 @@ export interface ActiveSession {
 
 export const authApi = {
   login: async (credentials: { email: string; password: string }): Promise<AuthResponse> => {
-    console.log('🔵 authApi: login() called')
-    console.log('🌐 API URL: /v1/auth/login')
-    console.log('📤 Request payload:', { email: credentials.email, password: '***' })
-    
-    try {
-      const response = await api.post<AuthResponse>('/auth/login', credentials)
-      console.log('✅ API Response status:', response.status)
-      
-      // Store auth data using session manager
-      sessionManager.setAuth({
-        access_token: response.data.access_token,
-        session_id: response.data.session_id,
-        user: response.data.user,
-      })
-      
-      console.log('✅ Auth data stored in session manager')
-      return response.data
-    } catch (error) {
-      console.error('❌ API Request failed:', error)
-      throw error
-    }
+    const response = await api.post<AuthResponse>('/auth/login', credentials)
+    sessionManager.setAuth({
+      access_token: response.data.access_token,
+      session_id: response.data.session_id,
+      user: response.data.user,
+    })
+    return response.data
   },
 
   register: async (userData: {
@@ -59,22 +45,19 @@ export const authApi = {
     last_name?: string
   }): Promise<AuthResponse> => {
     const response = await api.post<AuthResponse>('/auth/register', userData)
-    
-    // Store auth data using session manager
     sessionManager.setAuth({
       access_token: response.data.access_token,
       session_id: response.data.session_id,
       user: response.data.user,
     })
-    
     return response.data
   },
 
   logout: async (): Promise<void> => {
     try {
       await api.post('/auth/logout')
-    } catch (error) {
-      console.warn('Logout API call failed, clearing local session anyway:', error)
+    } catch {
+      // Ignore API errors — always clear local session
     } finally {
       sessionManager.clearAuth()
     }
@@ -102,20 +85,20 @@ export const authApi = {
   },
 
   requestInvite: async (inviteData: {
-    email: string;
-    company_name: string;
-    first_name?: string;
-    last_name?: string;
+    email: string
+    company_name: string
+    first_name?: string
+    last_name?: string
   }) => {
     const { data } = await api.post('/auth/request-invite', inviteData)
     return data
   },
 
   onboardBrand: async (onboardData: {
-    email: string;
-    company_name: string;
-    first_name: string;
-    last_name: string;
+    email: string
+    company_name: string
+    first_name: string
+    last_name: string
   }) => {
     const { data } = await api.post('/auth/onboard-brand', onboardData)
     return data
@@ -131,14 +114,11 @@ export const authApi = {
     return data
   },
 
-  // Helper to check if user is authenticated
   isAuthenticated: (): boolean => {
     return sessionManager.isAuthenticated()
   },
 
-  // Get current user from storage
   getCurrentUser: () => {
     return sessionManager.getUser()
   },
 }
-

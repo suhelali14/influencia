@@ -8,33 +8,61 @@ interface RateLimitConfig {
   message: string;
 }
 
+/**
+ * Get the real client IP address.
+ *
+ * SECURITY: We only trust X-Forwarded-For if it arrives via a known
+ * reverse-proxy (Render / nginx injects it reliably). We take the LAST
+ * IP in the chain — that is the IP the proxy itself saw, which an
+ * external client cannot spoof.
+ *
+ * If you add a new proxy layer in future, adjust this logic.
+ */
+function getClientIp(req: Request): string {
+  // req.ip is set by Express when 'trust proxy' is configured (main.ts sets it).
+  // It already handles X-Forwarded-For correctly via Express semantics.
+  if (req.ip) return req.ip;
+
+  // Fallback: take the last entry of X-Forwarded-For (the one added by our proxy)
+  const xForwardedFor = req.headers['x-forwarded-for'];
+  if (xForwardedFor) {
+    const ips = (Array.isArray(xForwardedFor) ? xForwardedFor.join(',') : xForwardedFor)
+      .split(',')
+      .map((s) => s.trim());
+    // Last IP is the one our trusted proxy saw — cannot be spoofed by client
+    return ips[ips.length - 1] || 'unknown';
+  }
+
+  return req.socket?.remoteAddress || 'unknown';
+}
+
 @Injectable()
 export class RateLimitMiddleware implements NestMiddleware {
   private readonly config: RateLimitConfig = {
-    windowMs: 60 * 1000, // 1 minute
-    maxRequests: 100, // 100 requests per minute
+    windowMs: 60 * 1000,   // 1 minute
+    maxRequests: 100,       // 100 requests per minute per IP
     message: 'Too many requests, please try again later.',
   };
 
   constructor(private readonly redisService: RedisService) {}
 
   async use(req: Request, res: Response, next: NextFunction) {
-    const ip = this.getClientIp(req);
+    const ip = getClientIp(req);
     const key = `ratelimit:${ip}`;
 
     try {
       const current = await this.redisService.incr(key);
-      
+
       if (current === 1) {
-        // First request, set expiration
+        // Set expiry on the first hit in this window
         await this.redisService.expire(key, Math.ceil(this.config.windowMs / 1000));
       }
 
       const ttl = await this.redisService.ttl(key);
-      
+
       res.setHeader('X-RateLimit-Limit', this.config.maxRequests);
       res.setHeader('X-RateLimit-Remaining', Math.max(0, this.config.maxRequests - current));
-      res.setHeader('X-RateLimit-Reset', Date.now() + (ttl * 1000));
+      res.setHeader('X-RateLimit-Reset', Date.now() + ttl * 1000);
 
       if (current > this.config.maxRequests) {
         throw new HttpException(
@@ -49,49 +77,40 @@ export class RateLimitMiddleware implements NestMiddleware {
 
       next();
     } catch (error) {
-      if (error instanceof HttpException) {
-        throw error;
-      }
-      // If Redis fails, allow the request
+      if (error instanceof HttpException) throw error;
+      // If Redis is unavailable, fail open (allow the request)
       next();
     }
-  }
-
-  private getClientIp(req: Request): string {
-    const forwarded = req.headers['x-forwarded-for'];
-    if (forwarded) {
-      return (Array.isArray(forwarded) ? forwarded[0] : forwarded).split(',')[0].trim();
-    }
-    return req.ip || req.socket.remoteAddress || 'unknown';
   }
 }
 
 /**
- * Stricter rate limiter for auth endpoints
+ * Stricter rate limiter for auth endpoints (login / register).
+ * 10 attempts per 15 minutes per IP — blocks brute force attacks.
  */
 @Injectable()
 export class AuthRateLimitMiddleware implements NestMiddleware {
   private readonly config: RateLimitConfig = {
     windowMs: 15 * 60 * 1000, // 15 minutes
-    maxRequests: 10, // 10 login attempts per 15 minutes
-    message: 'Too many login attempts, please try again later.',
+    maxRequests: 10,           // 10 login attempts per 15 minutes
+    message: 'Too many login attempts. Please wait 15 minutes before trying again.',
   };
 
   constructor(private readonly redisService: RedisService) {}
 
   async use(req: Request, res: Response, next: NextFunction) {
-    const ip = this.getClientIp(req);
+    const ip = getClientIp(req);
     const key = `ratelimit:auth:${ip}`;
 
     try {
       const current = await this.redisService.incr(key);
-      
+
       if (current === 1) {
         await this.redisService.expire(key, Math.ceil(this.config.windowMs / 1000));
       }
 
       const ttl = await this.redisService.ttl(key);
-      
+
       res.setHeader('X-RateLimit-Limit', this.config.maxRequests);
       res.setHeader('X-RateLimit-Remaining', Math.max(0, this.config.maxRequests - current));
 
@@ -108,18 +127,8 @@ export class AuthRateLimitMiddleware implements NestMiddleware {
 
       next();
     } catch (error) {
-      if (error instanceof HttpException) {
-        throw error;
-      }
+      if (error instanceof HttpException) throw error;
       next();
     }
-  }
-
-  private getClientIp(req: Request): string {
-    const forwarded = req.headers['x-forwarded-for'];
-    if (forwarded) {
-      return (Array.isArray(forwarded) ? forwarded[0] : forwarded).split(',')[0].trim();
-    }
-    return req.ip || req.socket.remoteAddress || 'unknown';
   }
 }

@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, UseGuards, Request, Headers } from '@nestjs/common';
+import { Controller, Get, Post, Body, UseGuards, Request, Headers, Req } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { BillingService } from './billing.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -52,14 +52,18 @@ export class BillingController {
   }
 
   /**
-   * Razorpay Webhook Receiver. Must be open (public, no JwtGuard).
+   * Razorpay Webhook Receiver (public — no JWT guard).
+   * SEC-3: Uses raw body for HMAC signature verification.
+   * NestJS must be bootstrapped with rawBody: true in main.ts.
    */
   @Post('webhook')
   @ApiOperation({ summary: 'Receive Razorpay status change webhooks' })
   async webhook(
-    @Body() body: any,
+    @Req() req: Request & { rawBody?: Buffer },
     @Headers('x-razorpay-signature') signature: string,
   ) {
-    return this.billingService.handleWebhook(body, signature);
+    // Use raw body (Buffer) for HMAC verification so JSON formatting doesn't affect the hash
+    const rawBody = (req as any).rawBody || Buffer.from(JSON.stringify((req as any).body));
+    return this.billingService.handleWebhook(rawBody, signature);
   }
 }

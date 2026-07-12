@@ -1,8 +1,13 @@
-import { Controller, Post, Get, Body, UseGuards, Request, Headers, Ip, Delete, Param } from '@nestjs/common';
+import {
+  Controller, Post, Get, Body, UseGuards, Request,
+  Headers, Ip, Delete, Param, ForbiddenException,
+} from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiHeader } from '@nestjs/swagger';
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
+import { RequestInviteDto } from './dto/request-invite.dto';
+import { OnboardBrandDto } from './dto/onboard-brand.dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { HybridAuthGuard } from './guards/hybrid-auth.guard';
 
@@ -12,7 +17,7 @@ export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
   @Post('register')
-  @ApiOperation({ summary: 'Register a new user' })
+  @ApiOperation({ summary: 'Register a new creator account' })
   @ApiResponse({ status: 201, description: 'User registered successfully. Returns access_token and session_id' })
   @ApiResponse({ status: 409, description: 'User already exists' })
   async register(
@@ -81,7 +86,7 @@ export class AuthController {
   @ApiOperation({ summary: 'Revoke a specific session' })
   @ApiResponse({ status: 200, description: 'Session revoked' })
   async revokeSession(@Request() req, @Param('sessionId') sessionId: string) {
-    // For security, only allow revoking own sessions
+    // Only allow revoking own sessions
     const sessions = await this.authService.getActiveSessions(req.user.userId);
     const targetSession = sessions.find((s) => s.sessionId.startsWith(sessionId.replace('...', '')));
     if (targetSession) {
@@ -101,35 +106,60 @@ export class AuthController {
     return this.authService.getProfile(req.user.userId);
   }
 
+  // ─── Brand Invite Request (public — anyone can request access) ───────────
   @Post('request-invite')
-  @ApiOperation({ summary: 'Request onboarding invite for Brands and Agencies' })
-  async requestInvite(
-    @Body() body: { email: string; company_name: string; first_name?: string; last_name?: string }
-  ) {
+  @ApiOperation({ summary: 'Request onboarding invite for Brands' })
+  @ApiResponse({ status: 201, description: 'Invite request submitted' })
+  async requestInvite(@Body() body: RequestInviteDto) {
     return this.authService.requestBrandInvite(body);
   }
 
+  // ─── Admin-only endpoints ─────────────────────────────────────────────────
+  // These require a valid JWT AND admin role — they are NOT public.
+
   @Post('onboard-brand')
-  @ApiOperation({ summary: 'Directly onboard a Brand and simulate welcome email' })
-  async onboardBrand(
-    @Body() body: { email: string; company_name: string; first_name: string; last_name: string }
-  ) {
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: '[ADMIN] Onboard a Brand partner account' })
+  @ApiResponse({ status: 201, description: 'Brand onboarded successfully' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  @ApiResponse({ status: 403, description: 'Admin access required' })
+  async onboardBrand(@Request() req, @Body() body: OnboardBrandDto) {
+    if (req.user?.role !== 'admin') {
+      throw new ForbiddenException('Admin access required');
+    }
     return this.authService.onboardBrand(body);
   }
 
   @Post('verify-creator/:id')
-  @ApiOperation({ summary: 'Verify or unverify a creator account' })
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: '[ADMIN] Verify or unverify a creator account' })
+  @ApiResponse({ status: 200, description: 'Creator verification status updated' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  @ApiResponse({ status: 403, description: 'Admin access required' })
   async verifyCreator(
+    @Request() req,
     @Param('id') id: string,
-    @Body() body: { isVerified: boolean }
+    @Body() body: { isVerified: boolean },
   ) {
+    if (req.user?.role !== 'admin') {
+      throw new ForbiddenException('Admin access required');
+    }
     return this.authService.verifyUser(id, body.isVerified);
   }
 
   @Get('invites')
-  @ApiOperation({ summary: 'Get list of all Brand invites' })
-  async getInvites() {
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: '[ADMIN] Get list of all Brand invite requests' })
+  @ApiResponse({ status: 200, description: 'Invite list retrieved' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  @ApiResponse({ status: 403, description: 'Admin access required' })
+  async getInvites(@Request() req) {
+    if (req.user?.role !== 'admin') {
+      throw new ForbiddenException('Admin access required');
+    }
     return this.authService.getInvites();
   }
 }
-
