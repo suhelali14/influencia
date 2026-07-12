@@ -51,10 +51,18 @@ function resolveHostWithFallback(hostname: string): Promise<string> {
       useFactory: async (configService: ConfigService) => {
         const isProduction = configService.get('NODE_ENV') === 'production';
         const dbHost = configService.get<string>('DATABASE_HOST') || 'localhost';
+        const isLocalHost = dbHost === 'localhost' || dbHost === '127.0.0.1';
         
         // Pre-resolve the database hostname using fallback DNS if needed
         const resolvedHost = await resolveHostWithFallback(dbHost);
         
+        const ssl = isLocalHost
+          ? false
+          : {
+              rejectUnauthorized: isProduction, // Enforce strict certificate verification only in production
+              servername: dbHost,               // Original hostname needed for SNI (e.g. Neon)
+            };
+
         return {
           type: 'postgres' as const,
           host: resolvedHost,
@@ -65,19 +73,9 @@ function resolveHostWithFallback(hostname: string): Promise<string> {
           entities: [__dirname + '/**/*.entity{.ts,.js}'],
           synchronize: false, // Disabled - schema managed by SQL migrations in /migrations
           logging: !isProduction,
-          ssl: isProduction
-            ? {
-                rejectUnauthorized: true, // Enforce cert verification in production
-                servername: dbHost,        // SNI required for Neon/PgBouncer
-              }
-            : false,
+          ssl,
           extra: {
-            ssl: isProduction
-              ? {
-                  rejectUnauthorized: true,
-                  servername: dbHost,
-                }
-              : false,
+            ssl,
             // Connection pool settings for production
             max: isProduction ? 20 : 5,
             idleTimeoutMillis: 30000,
